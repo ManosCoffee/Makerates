@@ -1,0 +1,195 @@
+"""
+CurrencyLayer - Bronze Ingestion Pipeline with dlt
+
+Extracts currency rates from CurrencyLayer API.
+Supports:
+1. Daily Live Rates (/live)
+2. Historical Range (/timeframe) - Requires Professional/Enterprise Plan
+
+dlt provides:
+- Schema tracking
+- Extraction State management
+- Data lineage
+"""
+
+import dlt
+import requests
+import os
+import argparse
+import sys
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+from utils.quota_manager import QuotaManager
+from utils.logging_config import root_logger as logger
+
+# Base URL
+CURRENCYLAYER_BASE_URL = "http://api.currencylayer.com" 
+
+@dlt.source(name="currencylayer")
+def currencylayer_source(date: Optional[str] = None):
+    """
+    dlt source factory for Daily/Single-Date CurrencyLayer extraction.
+    Args:
+        date: "YYYY-MM-DD" or None (for live)
+        Note: Free Tier only supports Source=USD.
+    """
+    api_key = os.getenv("CURRENCYLAYER_API_KEY")
+    if not api_key:
+        raise ValueError("CURRENCYLAYER_API_KEY not found in environment variables.")
+
+    @dlt.resource(
+        name="rates",
+        write_disposition="append",
+        primary_key="extraction_id"
+    )
+    def get_rates():
+        # Endpoint: /historical (if date) or /live
+        if date:
+            url = f"{CURRENCYLAYER_BASE_URL}/historical?access_key={api_key}&date={date}"
+        else:
+            url = f"{CURRENCYLAYER_BASE_URL}/live?access_key={api_key}"
+
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("success"):
+                error_info = data.get("error", {})
+                raise RuntimeError(f"CurrencyLayer API Error {error_info.get('code')}: {error_info.get('info')}")
+
+            # Build Record
+            timestamp = data.get("timestamp")
+            
+            # CurrencyLayer Free Tier is USD base
+            base_currency = data.get("source", "USD") 
+            
+            rates_dict = data.get("quotes", {})
+            # Quotes are like "USDGBP": 0.72. We need to strip the base.
+            cleaned_rates = {k.replace(base_currency, ""): v for k, v in rates_dict.items()}
+
+            record = {
+                "extraction_id": f"currencylayer_{data.get('date', datetime.now().strftime('%Y-%m-%d'))}_{timestamp}",
+                "extraction_timestamp": datetime.now().isoformat(),
+                "source": "currencylayer",
+                "source_tier": "secondary", # Paid/Limited source
+                "base_currency": base_currency, 
+                "rate_date": data.get("date", datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') if timestamp else datetime.now().strftime('%Y-%m-%d')),
+                "rates": cleaned_rates,
+                "timestamp": timestamp,
+                "api_response_raw": data,
+                "http_status_code": response.status_code
+            }
+            yield record
+
+        except Exception as e:
+            logger.error(f"Failed to fetch from CurrencyLayer: {e}")
+            raise
+
+    return get_rates
+
+
+@dlt.source(name="currencylayer")
+def currencylayer_range_source(start_date: str, end_date: str):
+    """
+    dlt source factory for Historical Time Series (Range).
+    Uses /timeframe endpoint (Requires Professional Plan).
+    """
+    api_key = os.getenv("CURRENCYLAYER_API_KEY")
+    
+    @dlt.resource(
+        name="rates",
+        write_disposition="append",
+        primary_key="extraction_id"
+    )
+    def get_historical_range():
+        # Endpoint: /timeframe
+        url = f"{CURRENCYLAYER_BASE_URL}/timeframe?access_key={api_key}&start_date={start_date}&end_date={end_date}"
+        
+        try:
+            logger.info(f"Fetching CurrencyLayer Timeframe: {start_date} to {end_date}")
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("success"):
+                error_info = data.get("error", {})
+                raise RuntimeError(f"CurrencyLayer API Error {error_info.get('code')}: {error_info.get('info')} - Note: Timeframe requires Professional Plan.")
+
+            base_currency = data.get("source", "USD")
+            quotes_by_date = data.get("quotes", {}) # Format: {"2021-01-01": {"USDGBP": ...}}
+
+            # Flatten: Yield one record per day
+            for date_key, rates_dict in quotes_by_date.items():
+                cleaned_rates = {k.replace(base_currency, ""): v for k, v in rates_dict.items()}
+                
+                yield {
+                    "extraction_id": f"currencylayer_{date_key}",
+                    "extraction_timestamp": datetime.now().isoformat(),
+                    "source": "currencylayer",
+                    "source_tier": "secondary",
+                    "base_currency": base_currency,
+                    "rate_date": date_key,
+                    "rates": cleaned_rates,
+                    "api_response_raw": {
+                        "date": date_key,
+                        "base": base_currency,
+                        "rates": cleaned_rates,
+                        "source_meta": "currencylayer_timeframe"
+                    }, 
+                    "http_status_code": response.status_code
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to fetch CurrencyLayer range: {str(e)}")
+            raise
+
+    return get_historical_range
+
+def run_currencylayer_pipeline(date: str = None):
+    # Quota management boilerplate
+    dynamodb_endpoint = os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000")
+    quota_manager = QuotaManager(endpoint_url=dynamodb_endpoint)
+    
+    try:
+        pipeline = dlt.pipeline(pipeline_name="currencylayer_to_bronze", destination="filesystem", dataset_name="currencylayer")
+        run_info = pipeline.run(currencylayer_source(date=date), write_disposition="append")
+        quota_manager.record_request("currencylayer", True)
+        print(run_info)
+    except Exception as e:
+        quota_manager.record_request("currencylayer", False)
+        raise
+
+def run_currencylayer_backfill(start_date: str, end_date: str):
+    logger.info(f"🚀 Starting CurrencyLayer Backfill: {start_date} to {end_date}")
+    dynamodb_endpoint = os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000")
+    quota_manager = QuotaManager(endpoint_url=dynamodb_endpoint)
+
+    try:
+        pipeline = dlt.pipeline(pipeline_name="currencylayer_backfill", destination="filesystem", dataset_name="currencylayer")
+        info = pipeline.run(currencylayer_range_source(start_date, end_date), write_disposition="append")
+        quota_manager.record_request("currencylayer", True)
+        print(info)
+        return info
+    except Exception as e:
+        quota_manager.record_request("currencylayer", False)
+        logger.error(f"CurrencyLayer Backfill Failed: {e}")
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="CurrencyLayer Ingestion Pipeline (Daily or Range)")
+    parser.add_argument("--start-date", help="Backfill Start Date (YYYY-MM-DD)")
+    parser.add_argument("--end-date", help="Backfill End Date (YYYY-MM-DD)")
+    args = parser.parse_args()
+
+    # Note: QuotaManager initialized inside functions to ensure correct scope/env usage
+
+    if args.start_date and args.end_date:
+        # Range/Backfill Mode
+        run_currencylayer_backfill(args.start_date, args.end_date)
+    else:
+        # Daily Mode
+        run_currencylayer_pipeline()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,39 @@
+iceberg_job:
+  env_vars:
+    required:
+      - SOURCE_BUCKET
+      - TABLE_NAME
+    optional:
+      - SOURCE_PREFIX
+      - TARGET_BUCKET
+      - ICEBERG_CATALOG
+      - ICEBERG_NAMESPACE
+      - AWS_REGION
+      - AWS_ENDPOINT_URL
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - PRIMARY_KEYS
+  defaults:
+    ICEBERG_CATALOG: "default"
+    ICEBERG_NAMESPACE: "default"
+    AWS_REGION: "us-east-1"
+    PRIMARY_KEYS: "rate_date,source,base_currency"
+
+sync_job:
+  env_vars:
+    required:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - DYNAMODB_TABLE_NAME
+    optional:
+      - AWS_ENDPOINT_URL
+      - AWS_REGION
+      - DYNAMODB_ENDPOINT_URL
+      - DYNAMODB_REGION
+      - DUCKDB_PATH
+      - MODE
+  defaults:
+    AWS_REGION: "us-east-1"
+    DYNAMODB_TABLE_NAME: "currency_rates"
+    DUCKDB_PATH: "analytics.duckdb"
+    MODE: "daily"

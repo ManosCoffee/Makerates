@@ -1,0 +1,23 @@
+[project]
+name = "makerates"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.42.34",
+    "dbt-duckdb>=1.10.0",
+    "duckdb>=1.0.0",
+    "dlt>=1.21.0",
+    "pyarrow>=14.0.0",
+    "pyiceberg[s3,glue,duckdb,sql-postgres]>=0.6.0",
+    "psycopg2-binary>=2.9.9",
+    "PyYAML>=6.0",
+    "s3fs",
+]
+
+[project.scripts]
+frankfurter_to_bronze = "src.frankfurter_to_bronze:main"
+currencylayer_to_bronze = "src.currencylayer_to_bronze:main"
+exchangerate_to_bronze = "src.exchangerate_to_bronze:main"
+compact_to_iceberg = "src.compact_to_iceberg:main"

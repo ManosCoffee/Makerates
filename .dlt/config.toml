@@ -1,0 +1,7 @@
+[destination.filesystem]
+bucket_url = "s3://bronze-bucket"
+# Partitioned by Year/Month, File named by full Date-Time and Load ID
+layout = "{pipeline_name}/{table_name}/year={YYYY}/month={MM}/{YYYY}-{MM}-{DD}-{HH}{mm}{ss}_{load_id}.{ext}"
+
+[destination.filesystem.kwargs]
+client_kwargs = { endpoint_url = "http://minio:9000" } # Change to http://minio:9000 for Docker

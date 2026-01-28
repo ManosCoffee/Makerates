@@ -1,0 +1,11 @@
+
+    
+    
+    truncate table "analytics"."main_analytics"."country_currencies";
+    -- dbt seed --
+    
+          COPY "analytics"."main_analytics"."country_currencies" FROM '/Users/manos/dev/makerates/dbt_project/seeds/country_currencies.csv' (FORMAT CSV, HEADER TRUE, DELIMITER ',')
+        
+
+;
+  

@@ -1,0 +1,101 @@
+id: iceberg_stress_test
+namespace: makerates
+labels:
+  project: makerates
+  type: stress-test
+  env: development
+
+inputs:
+  - id: start_date
+    type: DATE
+    required: true
+    description: "Start Date (YYYY-MM-DD)"
+  
+  - id: end_date
+    type: DATE
+    required: true
+    description: "End Date (YYYY-MM-DD)"
+
+
+variables:
+  # MinIO specific
+  minio_endpoint: "{{ envs.minio_endpoint }}"
+  
+  # Buckets
+  bronze_bucket: "{{ envs.bronze_bucket }}"
+  silver_bucket: "{{ envs.silver_bucket }}"
+  
+  # Secrets/Credentials
+  dlt_aws_access_key_id: "{{ envs.destination__filesystem__credentials__aws_access_key_id }}"
+  dlt_aws_secret_access_key: "{{ envs.destination__filesystem__credentials__aws_secret_access_key }}"
+  ddb_default_region: "{{ envs.dynamodb_aws_default_region }}"
+
+tasks:
+  - id: parallel_compaction
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      # 1. Frankfurter Compaction
+      - id: load_frankfurter_to_iceberg
+        type: io.kestra.plugin.docker.Run
+        containerImage: makerates-ingestion-base:latest
+        pullPolicy: NEVER
+        networkMode: makerates-network
+        env:
+          # --- S3 Connectivity ---
+          AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+          AWS_REGION: "{{ vars.ddb_default_region }}"
+          AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+
+          # --- Iceberg App Params ---
+          SOURCE_BUCKET: "s3://{{ vars.bronze_bucket }}"
+          SOURCE_PREFIX: "frankfurter"
+          TARGET_BUCKET: "s3://{{ vars.silver_bucket }}/iceberg"
+          TABLE_NAME: "frankfurter_rates"
+          ICEBERG_CATALOG: "default"
+          ICEBERG_NAMESPACE: "default"
+
+          # --- Catalog Configuration (Postgres) ---
+          PYICEBERG_CATALOG__DEFAULT__TYPE: "sql"
+          PYICEBERG_CATALOG__DEFAULT__URI: "postgresql+psycopg2://iceberg:iceberg@iceberg-catalog-db:5432/iceberg_catalog"
+          PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: "{{ vars.minio_endpoint }}"
+          PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: "s3://{{ vars.silver_bucket }}/iceberg"
+
+        commands:
+          - iceberg_loader
+          - "--start-date={{ inputs.start_date }}"
+          - "--end-date={{ inputs.end_date }}"
+          - "--mode=backfill"
+
+      # 2. CurrencyLayer Compaction
+      - id: load_currencylayer_to_iceberg
+        type: io.kestra.plugin.docker.Run
+        containerImage: makerates-ingestion-base:latest
+        pullPolicy: NEVER
+        networkMode: makerates-network
+        env:
+          # --- S3 Connectivity ---
+          AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+          AWS_REGION: "{{ vars.ddb_default_region }}"
+          AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+
+          # --- Iceberg App Params ---
+          SOURCE_BUCKET: "s3://{{ vars.bronze_bucket }}"
+          SOURCE_PREFIX: "currencylayer"
+          TARGET_BUCKET: "s3://{{ vars.silver_bucket }}/iceberg"
+          TABLE_NAME: "currencylayer_rates"
+          ICEBERG_CATALOG: "default"
+          ICEBERG_NAMESPACE: "default"
+
+          # --- Catalog Configuration (Postgres) ---
+          PYICEBERG_CATALOG__DEFAULT__TYPE: "sql"
+          PYICEBERG_CATALOG__DEFAULT__URI: "postgresql+psycopg2://iceberg:iceberg@iceberg-catalog-db:5432/iceberg_catalog"
+          PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: "{{ vars.minio_endpoint }}"
+          PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: "s3://{{ vars.silver_bucket }}/iceberg"
+
+        commands:
+          - iceberg_loader
+          - "--start-date={{ inputs.start_date }}"
+          - "--end-date={{ inputs.end_date }}"
+          - "--mode=backfill"

@@ -1,0 +1,265 @@
+id: rates_backfill
+namespace: makerates
+
+description: |
+  Currency Rates Backfill - Historical Data Load
+
+  Loads historical rates for a date range in BATCH mode.
+  Parallel extraction from Frankfurter and CurrencyLayer.
+
+  Quota-aware: Respects API limits.
+
+labels:
+  project: makerates
+  type: backfill
+  env: production
+
+inputs:
+  - id: start_date
+    type: DATE
+    required: true
+    description: Start date (YYYY-MM-DD)
+
+  - id: end_date
+    type: DATE
+    required: true
+    description: End date (YYYY-MM-DD, inclusive)
+
+variables:
+  #run mode = backfill
+  run_mode: "backfill"
+  # MinIO specific
+  minio_endpoint: "{{ envs.minio_endpoint }}"
+  minio_root_user: "{{ envs.minio_root_user }}"
+  minio_root_password: "{{ envs.minio_root_password }}"
+  # DLT Reusable Vars
+  dlt_bucket_url: "{{ envs.destination__filesystem__bucket_url }}"
+  dlt_layout: "{{ envs.destination__filesystem__layout }}"
+  dlt_extra_placeholders: "{{ envs.destination__filesystem__extra_placeholders }}"
+  dlt_aws_access_key_id: "{{ envs.destination__filesystem__credentials__aws_access_key_id }}"
+  dlt_aws_secret_access_key: "{{ envs.destination__filesystem__credentials__aws_secret_access_key }}"
+  # DynamoDB Specific
+  dynamodb_endpoint: "{{ envs.dynamodb_endpoint }}"
+  ddb_access_key_id: "{{ envs.dynamodb_aws_access_key_id }}"
+  ddb_secret_access_key: "{{ envs.dynamodb_aws_secret_access_key }}"
+  ddb_default_region: "{{ envs.dynamodb_aws_default_region }}"
+  # api keys
+  currencylayer_api_key: "{{ envs.currencylayer_api_key }}"
+  # BUCKETS
+  source_bucket: "s3://{{ envs.bronze_bucket }}"
+  target_bucket: "s3://{{ envs.silver_bucket }}/iceberg"  
+  # ICEBERG
+  pyiceberg_catalog_default_uri : "{{envs.pyiceberg_catalog_default_uri}}"
+  pyiceberg_catalog_default_type : "{{envs.pyiceberg_catalog_default_type}}"
+  pyiceberg_catalog_default_warehouse: "s3://{{ envs.silver_bucket }}/iceberg"
+  frankfurter_source_prefix: "{{envs.frankfurter_source_prefix}}"
+  currencylayer_source_prefix: "{{envs.currencylayer_source_prefix}}"
+  frankfurter_table_name: "{{envs.frankfurter_table_name}}"
+  currencylayer_table_name: "{{envs.currencylayer_table_name }}"
+  iceberg_catalog: "{{envs.iceberg_catalog}}"
+  iceberg_namespace: "{{envs.iceberg_namespace}}"
+
+
+
+tasks:
+
+  # ===== INIT QUOTAS =====
+  - id: check_quotas
+    type: io.kestra.plugin.docker.Run
+    containerImage: makerates-ingestion-base:latest
+    pullPolicy: NEVER
+    networkMode: makerates-network
+    env:
+      DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+      AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+      AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+    commands:
+      - quotas_endpoint
+
+  - id: backfill_parallel
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: extract_frankfurter
+        type: io.kestra.plugin.docker.Run
+        containerImage: makerates-ingestion-base:latest
+        pullPolicy: NEVER
+        networkMode: makerates-network
+        env:
+          # Global
+          AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+          AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+          # DynamoDB
+          DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+          DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+          DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+          # MinIO & DLT specific
+          MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
+          AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}" # Global override for boto3/s3fs
+          DESTINATION__FILESYSTEM__BUCKET_URL: "{{ vars.dlt_bucket_url }}"
+          DESTINATION__FILESYSTEM__LAYOUT: "{{ vars.dlt_layout }}"
+          DESTINATION__FILESYSTEM__EXTRA_PLACEHOLDERS: '{"run_mode": "backfill"}'
+          DESTINATION__FILESYSTEM__KWARGS__CLIENT_KWARGS__ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+          DESTINATION__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          DESTINATION__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+          
+        commands:
+          - frankfurter_extractor 
+          - "--start-date={{ inputs.start_date }}"
+          - "--end-date={{ inputs.end_date }}"
+      
+      - id: extract_currencylayer
+        type: io.kestra.plugin.docker.Run
+        containerImage: makerates-ingestion-base:latest
+        pullPolicy: NEVER
+        networkMode: makerates-network
+        runIf: '{{ outputs.check_quotas["vars"]["currencylayer"] }}'
+        env:
+          CURRENCYLAYER_API_KEY: "{{ vars.currencylayer_api_key }}"
+          # Global
+          AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+          AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+          # DynamoDB
+          DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+          DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+          DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+          # MinIO & DLT specific
+          MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
+          AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}" # Global override for boto3/s3fs
+          
+          DESTINATION__FILESYSTEM__BUCKET_URL: "{{ vars.dlt_bucket_url }}"
+          DESTINATION__FILESYSTEM__LAYOUT: "{{ vars.dlt_layout }}"
+          DESTINATION__FILESYSTEM__EXTRA_PLACEHOLDERS: '{"run_mode": "backfill"}'
+          
+          # Explicitly set nested config to avoid JSON parsing issues
+          DESTINATION__FILESYSTEM__KWARGS__CLIENT_KWARGS__ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+          
+          DESTINATION__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          DESTINATION__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+        commands:
+          - currencylayer_extractor
+          - "--start-date={{ inputs.start_date }}"
+          - "--end-date={{ inputs.end_date }}"
+        allowFailure: true 
+
+  # ===== 2b. COMPACT TO ICEBERG (Bronze -> Silver) =====
+  - id: create_iceberg_sources
+    description: "Compact backfill JSONL into optimized Iceberg tables"
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: load_frankfurter_to_iceberg
+        dependsOn:
+          - extract_frankfurter
+        type: io.kestra.plugin.docker.Run
+        containerImage: makerates-ingestion-base:latest
+        pullPolicy: NEVER
+        networkMode: makerates-network
+        env:
+          # --- S3 Connectivity ---
+          AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+          AWS_REGION: "{{ vars.ddb_default_region }}"
+          AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+
+          # --- Iceberg App Params ---
+          SOURCE_BUCKET: "{{ vars.source_bucket }}"
+          SOURCE_PREFIX: "{{ vars.frankfurter_source_prefix }}"
+          TARGET_BUCKET: "{{ vars.target_bucket }}"
+          TABLE_NAME: "{{ vars.frankfurter_table_name }}"
+          ICEBERG_CATALOG: "{{ vars.iceberg_catalog }}"
+          ICEBERG_NAMESPACE: "{{ vars.iceberg_namespace }}"
+
+          # --- Catalog Configuration (Postgres) ---
+          PYICEBERG_CATALOG__DEFAULT__TYPE: "{{ vars.pyiceberg_catalog_default_type }}"
+          PYICEBERG_CATALOG__DEFAULT__URI: "{{ vars.pyiceberg_catalog_default_uri }}"
+          PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: "{{ vars.minio_endpoint }}"
+          PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: "{{ vars.pyiceberg_catalog_default_warehouse }}"
+        commands:
+          - iceberg_loader
+          - "--start-date={{ inputs.start_date }}"
+          - "--end-date={{ inputs.end_date }}"
+          - "--mode={{vars.run_mode}}"
+
+      # ExchangeRate skipped in backfill usually? Or check flow logic.
+      # The backfill flow above does NOT have exchangerate task in 'backfill_parallel'!
+      # It only has frankfurter and currencylayer.
+      # So we only include those here.
+
+      - id: load_currencylayer_to_iceberg
+        dependsOn:
+          - extract_currencylayer
+        type: io.kestra.plugin.docker.Run
+        containerImage: makerates-ingestion-base:latest
+        pullPolicy: NEVER
+        networkMode: makerates-network
+        env:
+          # --- S3 Connectivity ---
+          AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+          AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+          AWS_REGION: "{{ vars.ddb_default_region }}"
+          AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+
+          # --- Iceberg App Params ---
+          SOURCE_BUCKET: "{{ vars.source_bucket }}"
+          SOURCE_PREFIX: "{{ vars.currencylayer_source_prefix }}"
+          TARGET_BUCKET: "{{ vars.pyiceberg_catalog_default_warehouse }}" #"s3://{{ vars.silver_bucket }}/iceberg"
+          TABLE_NAME: "{{ vars.currencylayer_table_name }}"
+          ICEBERG_CATALOG: "{{ vars.iceberg_catalog }}"
+          ICEBERG_NAMESPACE: "{{ vars.iceberg_namespace }}"
+
+          # --- Catalog Configuration (Postgres) ---
+          PYICEBERG_CATALOG__DEFAULT__TYPE: "{{vars.pyiceberg_catalog_default_type}}"
+          PYICEBERG_CATALOG__DEFAULT__URI: "{{vars.pyiceberg_catalog_default_uri}}"
+          PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: "{{ vars.minio_endpoint }}"
+          PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: "{{ vars.pyiceberg_catalog_default_warehouse }}"
+        commands:
+          - iceberg_loader
+          - "--start-date={{ inputs.start_date }}"
+          - "--end-date={{ inputs.end_date }}"
+          - "--mode={{vars.run_mode}}"
+
+  - id: batch_transform
+    type: io.kestra.plugin.dbt.cli.DbtCLI
+    description: Run dbt for entire range (with consensus validation)
+    runner: DOCKER
+    docker:
+      image: makerates-ingestion-base:latest
+      pullPolicy: NEVER
+      networkMode: makerates-network
+    # dbt configuration
+    projectDir: /app/dbt_project
+    profilesDir: /app/dbt_project
+    env:
+      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+      MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
+      MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
+      MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
+    commands:
+      - dbt deps --project-dir /app/dbt_project --profiles-dir /app/dbt_project
+      - dbt seed --project-dir /app/dbt_project --profiles-dir /app/dbt_project
+      - dbt test --project-dir /app/dbt_project --profiles-dir /app/dbt_project
+      - dbt run --project-dir /app/dbt_project --profiles-dir /app/dbt_project
+      
+
+
+  - id: log_summary
+    type: io.kestra.core.tasks.log.Log
+    message: |
+      ✅ Backfill Complete
+      ===========================================
+      Range: {{ inputs.start_date }} to {{ inputs.end_date }}
+      ===========================================
+
+errors:
+  - id: backfill_error
+    type: io.kestra.core.tasks.log.Log
+    message: |
+      ❌ Backfill Failed
+      Range: {{ inputs.start_date }} to {{ inputs.end_date }}
+      Failed Task: {{ task.id }}
+
+      Recovery: Re-run entire flow (idempotent)
+  

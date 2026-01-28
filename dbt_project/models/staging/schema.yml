@@ -1,0 +1,183 @@
+version: 2
+
+models:
+  # =========================================================================
+  # STAGING MODELS: Layer 1 - Structural Validation (dlt) + Layer 2 - Logical Validation (dbt tests)
+  # =========================================================================
+
+  - name: stg_frankfurter
+    description: |
+      Staging table for Frankfurter API (ECB rates).
+      Secondary source for EUR-based exchange rates.
+
+      Swiss Cheese Layer 1 (dlt): Schema validation, data types
+      Swiss Cheese Layer 2 (dbt): Logical constraints, impossible values
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - base_currency
+            - target_currency
+            - rate_date
+    columns:
+      - name: extraction_id
+        description: Unique identifier for this extraction
+        tests:
+          - not_null
+
+      - name: extraction_timestamp
+        description: When data was extracted (ISO format)
+        tests:
+          - not_null
+
+      - name: source
+        description: Data source identifier
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['frankfurter']
+
+      - name: base_currency
+        description: Base currency for rates
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EUR']  # Frankfurter uses EUR base
+
+      - name: target_currency
+        description: Target currency code (ISO 4217)
+        tests:
+          - not_null
+
+      - name: exchange_rate
+        description: Exchange rate (1 EUR = X target_currency)
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"  # Rates must be positive
+          - dbt_utils.expression_is_true:
+              expression: "< 1000000"  # Sanity check: no rate should exceed 1M
+
+      - name: rate_date
+        description: Official rate date from ECB
+        tests:
+          - not_null
+
+  - name: stg_exchangerate
+    description: |
+      Staging table for ExchangeRate-API.
+      Primary source for USD-based exchange rates (consensus validation).
+
+      Swiss Cheese Layer 1 (dlt): Schema validation, data types
+      Swiss Cheese Layer 2 (dbt): Logical constraints, impossible values
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - base_currency
+            - target_currency
+            - rate_date
+    columns:
+      - name: extraction_id
+        description: Unique identifier for this extraction
+        tests:
+          - not_null
+
+      - name: extraction_timestamp
+        description: When data was extracted (ISO format)
+        tests:
+          - not_null
+
+      - name: source
+        description: Data source identifier
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['exchangerate']
+
+      - name: base_currency
+        description: Base currency for rates
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['USD']  # ExchangeRate-API uses USD base
+
+      - name: target_currency
+        description: Target currency code (ISO 4217)
+        tests:
+          - not_null
+
+      - name: exchange_rate
+        description: Exchange rate (1 USD = X target_currency)
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"  # Rates must be positive
+          - dbt_utils.expression_is_true:
+              expression: "< 1000000000"  # Sanity check
+
+      - name: rate_date
+        description: Official rate date
+        tests:
+          - not_null
+
+  - name: stg_currencylayer
+    description: |
+      Staging table for CurrencyLayer API.
+      Tertiary source for cross-validation and fallback.
+
+      Swiss Cheese Layer 1 (dlt): Schema validation, data types
+      Swiss Cheese Layer 2 (dbt): Logical constraints
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - base_currency
+            - target_currency
+            - rate_date
+    columns:
+      - name: extraction_id
+        description: Unique identifier for this extraction
+        tests:
+          - not_null
+
+      - name: extraction_timestamp
+        description: When data was extracted (ISO format)
+        tests:
+          - not_null
+
+      - name: source
+        description: Data source identifier
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['currencylayer']
+
+      - name: base_currency
+        description: Base currency for rates
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['USD']  # CurrencyLayer (Free) uses USD base
+
+      - name: target_currency
+        description: Target currency code (ISO 4217)
+        tests:
+          - not_null
+
+      - name: exchange_rate
+        description: Exchange rate (1 USD = X target_currency)
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+          - dbt_utils.expression_is_true:
+              expression: "< 1000000"
+
+      - name: rate_date
+        description: Official rate date
+        tests:
+          - not_null

@@ -1,0 +1,53 @@
+name: 'makerates'
+version: '1.0.0'
+config-version: 2
+
+# Project profile (connects to DuckDB with Iceberg)
+profile: 'makerates'
+
+# Model paths
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+# Build artifacts
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Model configurations
+models:
+  makerates:
+    # Staging Layer
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ["staging"]
+
+    # Silver layer: validated currency rates
+    # DuckDB writes to local tables, then we export to Parquet with metadata
+    validation:
+      +materialized: view
+      +schema: validation
+      +tags: ["validation", "validated"]
+      
+      # Persist the final validated rates as DuckDB Table (simplification)
+      fact_rates_validated:
+        +materialized: table
+
+    # Gold layer: Business Analytics (DuckDB Tables)
+    analytics:
+      +materialized: table
+      +schema: analytics
+      +tags: ["analytics"]
+
+
+seeds:
+  makerates:
+    country_currencies:
+      +enabled: true
+      +schema: analytics

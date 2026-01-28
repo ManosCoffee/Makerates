@@ -1,0 +1,35 @@
+FROM python:3.12-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    git \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml uv.lock* README.md* ./
+
+# Install dependencies
+RUN uv sync --no-dev
+
+# Copy application code
+COPY src/ src/
+COPY scripts/ scripts/
+COPY dbt_project/ dbt_project/
+COPY dbt_project/ dbt_project/
+# COPY .dlt/ .dlt/  <-- REMOVED: Injected via env vars at runtime
+
+# Add virtual environment to PATH
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app/src
+
+# Flexible entrypoint - can run python modules or bash commands
+ENTRYPOINT ["python", "-m"]

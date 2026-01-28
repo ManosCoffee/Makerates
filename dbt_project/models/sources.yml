@@ -1,0 +1,69 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: "Bronze layer data from dlt pipelines (MinIO S3)"
+    schema: bronze_layer
+
+    # Bronze data comes from dlt's filesystem destination
+    # dlt stores data in: s3://bronze-bucket/bronze/rates/*.jsonl.gz
+
+    tables:
+      - name: frankfurter_rates
+        description: "Raw Frankfurter (ECB) exchange rates from dlt pipeline"
+        external:
+          location: "s3://bronze-bucket/frankfurter/rates/daily/**/*.jsonl"
+          options:
+            format: "newline_delimited"
+            compression: "gzip"
+        meta:
+          dlt_pipeline: "frankfurter_to_bronze"
+          source_tier: "secondary"
+
+      - name: exchangerate_rates
+        description: "Raw ExchangeRate-API rates from dlt pipeline"
+        external:
+          location: "s3://bronze-bucket/exchangerate/rates/daily/**/*.jsonl"
+          options:
+            format: "newline_delimited"
+            compression: "gzip"
+        meta:
+          dlt_pipeline: "exchangerate_to_bronze"
+          source_tier: "primary"
+
+      - name: currencylayer_rates
+        description: "Raw CurrencyLayer rates from dlt pipeline"
+        external:
+          location: "s3://bronze-bucket/currencylayer/rates/daily/**/*.jsonl"
+          options:
+            format: "newline_delimited"
+            compression: "gzip"
+        meta:
+          dlt_pipeline: "currencylayer_to_bronze"
+          source_tier: "secondary"
+
+  - name: silver_iceberg
+    description: "Compacted Iceberg tables in the Silver layer (Managed by Postgres Catalog)"
+    schema: main  # DuckDB doesn't use the catalog schema strictly if scanning files directly
+    
+    tables:
+      - name: frankfurter_rates
+        description: "Compacted, Deduplicated Frankfurter Rates"
+        external:
+          location: "s3://silver-bucket/iceberg/default/frankfurter_rates"
+        meta:
+            tool: "pyiceberg"
+      
+      - name: currencylayer_rates
+        description: "Compacted, Deduplicated CurrencyLayer Rates"
+        external:
+          location: "s3://silver-bucket/iceberg/default/currencylayer_rates"
+        meta:
+            tool: "pyiceberg"
+
+      - name: exchangerate_rates
+        description: "Compacted, Deduplicated ExchangeRate-API Rates"
+        external:
+          location: "s3://silver-bucket/iceberg/default/exchangerate_rates"
+        meta:
+            tool: "pyiceberg"

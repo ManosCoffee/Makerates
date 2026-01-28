@@ -1,0 +1,25 @@
+makerates:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: 'analytics.duckdb'  # Local DuckDB database for Gold layer + staging views
+
+      # DuckDB extensions for Iceberg and S3
+      extensions:
+        - httpfs      # For S3/MinIO access
+        - parquet     # Parquet read/write
+        - json        # JSON parsing for Bronze data
+        - iceberg     # Iceberg table format support
+
+      # DuckDB settings for MinIO/S3 access (uses env vars for Docker compatibility)
+      settings:
+        s3_endpoint: "{{ env_var('MINIO_ENDPOINT', 'localhost:9000') | replace('http://', '') | replace('https://', '') }}"
+        s3_use_ssl: false
+        s3_access_key_id: "{{ env_var('MINIO_ROOT_USER', 'minioadmin') }}"
+        s3_secret_access_key: "{{ env_var('MINIO_ROOT_PASSWORD', 'minioadmin123') }}"
+        s3_url_style: 'path'
+        unsafe_enable_version_guessing: true
+
+      # Thread configuration
+      threads: 4

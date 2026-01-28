@@ -1,0 +1,212 @@
+version: '3.8'
+
+services:
+  # MinIO (S3-compatible storage for Bronze layer)
+  minio:
+    image: minio/minio:latest
+    container_name: makerates-minio
+    ports:
+      - "9000:9000" # API
+      - "9001:9001" # Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - makerates-network
+
+  # MinIO initialization - Create buckets for Bronze
+  minio-init:
+    image: minio/mc:latest
+    container_name: makerates-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c " sleep 5; /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; /usr/bin/mc mb myminio/${BRONZE_BUCKET} || true; /usr/bin/mc mb myminio/${SILVER_BUCKET} || true; echo 'MinIO buckets created successfully'; "
+    networks:
+      - makerates-network
+
+  # DynamoDB Local (Hot tier for downstream services)
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: makerates-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    networks:
+      - makerates-network
+
+  # Dedicated Iceberg Catalog Database (Postgres)
+  iceberg-catalog-db:
+    image: postgres:15-alpine
+    container_name: makerates-iceberg-db
+    environment:
+      POSTGRES_USER: iceberg
+      POSTGRES_PASSWORD: iceberg
+      POSTGRES_DB: iceberg_catalog
+    ports:
+      - "5433:5432" # Exposed on 5433 to avoid conflict with Kestra DB
+    volumes:
+      - iceberg-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U iceberg" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - makerates-network
+    restart: unless-stopped
+
+  # Project Nessie (Iceberg Catalog)
+  nessie:
+    image: projectnessie/nessie:latest
+    container_name: makerates-nessie
+    ports:
+      - "19120:19120"
+    networks:
+      - makerates-network
+    restart: unless-stopped
+
+  # ================ ORCHESTRATION LAYER - Kestra Workflows ==========================
+
+  # Kestra Backend Database
+  kestra-db:
+    image: postgres:15-alpine
+    container_name: makerates-kestra-db
+    environment:
+      POSTGRES_DB: ${KESTRA_DB}
+      POSTGRES_USER: ${KESTRA_DB_USER}
+      POSTGRES_PASSWORD: ${KESTRA_DB_PASSWORD}
+    volumes:
+      - kestra-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${KESTRA_DB_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - makerates-network
+    restart: unless-stopped
+
+  # Kestra Server
+  kestra:
+    image: kestra/kestra:latest
+    container_name: makerates-kestra
+    command: server standalone
+    user: "root"
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - kestra-data:/app/storage
+      - ./kestra/flows:/app/flows
+      - ./dbt_project:/app/dbt_project
+    environment:
+      KESTRA_CONFIGURATION: |
+        datasources:
+          postgres:
+            url: jdbc:postgresql://kestra-db:5432/${KESTRA_DB}
+            driverClassName: org.postgresql.Driver
+            username: ${KESTRA_DB_USER}
+            password: ${KESTRA_DB_PASSWORD}
+        micronaut:
+          io:
+            watch:
+              enabled: true
+              paths:
+                - /app/flows
+        kestra:
+          variables:
+            env-vars-prefix: "KESTRA_"
+          server:
+            basic-auth:
+              enabled: true
+              username: admin@kestra.io
+              password: Kestra123
+          repository:
+            type: postgres
+          storage:
+            type: local
+            local:
+              base-path: /app/storage
+          queue:
+            type: postgres
+          tutorialFlows:
+            enabled: false
+          plugins:
+            configurations:
+              - type: io.kestra.plugin.scripts.runner.docker.Docker
+                values:
+                  networkMode: makerates-network
+                  volumeEnabled: true
+      DOCKER_HOST: unix:///var/run/docker.sock
+      # DLT Configuration Injection
+      KESTRA_DESTINATION__FILESYSTEM__BUCKET_URL: ${DESTINATION__FILESYSTEM__BUCKET_URL}
+      KESTRA_DESTINATION__FILESYSTEM__LAYOUT: ${DESTINATION__FILESYSTEM__LAYOUT}
+      KESTRA_DESTINATION__FILESYSTEM__EXTRA_PLACEHOLDERS: ${DESTINATION__FILESYSTEM__EXTRA_PLACEHOLDERS:-{}}
+      KESTRA_DESTINATION__FILESYSTEM__KWARGS__CLIENT_KWARGS: ${DESTINATION__FILESYSTEM__KWARGS__CLIENT_KWARGS}
+      KESTRA_DESTINATION__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID: ${DESTINATION__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID}
+      KESTRA_DESTINATION__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY: ${DESTINATION__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY}
+      # AWS CREDS & ENDPOINTS
+      KESTRA_DYNAMODB_AWS_ACCESS_KEY_ID: ${DYNAMODB_AWS_ACCESS_KEY_ID}
+      KESTRA_DYNAMODB_AWS_SECRET_ACCESS_KEY: ${DYNAMODB_AWS_SECRET_ACCESS_KEY}
+      KESTRA_DYNAMODB_AWS_DEFAULT_REGION: ${DYNAMODB_AWS_DEFAULT_REGION}
+      KESTRA_DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT}
+      KESTRA_MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      KESTRA_MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      KESTRA_MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      KESTRA_CURRENCYLAYER_API_KEY: ${CURRENCYLAYER_API_KEY}
+      KESTRA_EXCHANGERATE_API_KEY: ${EXCHANGERATE_API_KEY}
+      # SOURCES, TARGETS
+      KESTRA_BRONZE_BUCKET: ${BRONZE_BUCKET}
+      KESTRA_SILVER_BUCKET: ${SILVER_BUCKET}
+      # ICEBERG
+      KESTRA_PYICEBERG_CATALOG_DEFAULT_URI: ${PYICEBERG_CATALOG_DEFAULT_URI}
+      KESTRA_PYICEBERG_CATALOG_DEFAULT_TYPE: ${PYICEBERG_CATALOG_DEFAULT_TYPE}
+      KESTRA_FRANKFURTER_SOURCE_PREFIX: ${FRANKFURTER_SOURCE_PREFIX}
+      KESTRA_CURRENCYLAYER_SOURCE_PREFIX: ${CURRENCYLAYER_SOURCE_PREFIX}
+      KESTRA_EXCHANGERATE_SOURCE_PREFIX: ${EXCHANGERATE_SOURCE_PREFIX}
+      KESTRA_FRANKFURTER_TABLE_NAME: ${FRANKFURTER_TABLE_NAME}
+      KESTRA_CURRENCYLAYER_TABLE_NAME: ${CURRENCYLAYER_TABLE_NAME}
+      KESTRA_EXCHANGERATE_TABLE_NAME: ${EXCHANGERATE_TABLE_NAME}
+      KESTRA_ICEBERG_CATALOG: ${ICEBERG_CATALOG}
+      KESTRA_ICEBERG_NAMESPACE: ${ICEBERG_NAMESPACE}
+    depends_on:
+      kestra-db:
+        condition: service_healthy
+    networks:
+      - makerates-network
+    restart: unless-stopped
+
+  # Build the ingestion base image (no need to run as service)
+  # Build with: docker compose build ingestion-base
+  ingestion-base:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingestion
+    image: makerates-ingestion-base:latest
+    profiles:
+      - build-only # Prevents this from starting with docker compose up
+    environment:
+      DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+
+volumes:
+  minio-data:
+  iceberg-db-data:
+  kestra-data:
+    name: kestra-data
+  kestra-db-data:
+    name: kestra-db-data
+
+networks:
+  makerates-network:
+    name: makerates-network # Explicitly set network name to avoid prefix
+    driver: bridge

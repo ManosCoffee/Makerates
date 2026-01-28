@@ -1,0 +1,20 @@
+storage:
+  bronze:
+    # Base pattern for all bronze data
+    # Params: {bucket}, {prefix}
+    base_path: "{bucket}/{prefix}/rates"
+    
+    # Path patterns for different modes/strategies
+    # Params: {base_path}, {year}, {month}, {day}
+    patterns:
+      # Daily Mode: Specific day (YYYY/MM/YYYY_MM_DD*.jsonl*)
+      daily: "{base_path}/daily/{year}/{month}/{year}_{month}_{day}*.jsonl*"
+      
+      # Backfill Strategy A: Specific day (TODAY's processing date YYYY/MM/YYYY_MM_DD*.jsonl*)
+      backfill_day: "{base_path}/backfill/{year}/{month}/{year}_{month}_{day}*.jsonl*"
+      
+      # Backfill Strategy B: Specific month
+      backfill_month: "{base_path}/backfill/{year}/{month}/*.jsonl*"
+      
+      # Backfill Strategy C: Recursive fallback
+      backfill_root: "{base_path}/backfill/**/*.jsonl*"

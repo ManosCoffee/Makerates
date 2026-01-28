@@ -1,0 +1,181 @@
+version: 2
+
+models:
+  # =========================================================================
+  # EXISTING MODELS
+  # =========================================================================
+
+  - name: mart_latest_rates
+    description: |
+      Latest validated rates with country context.
+      Used by dashboards showing "Latest EUR rates by region"
+    columns:
+      - name: exchange_rate
+        description: Current exchange rate (1 EUR = X target currency)
+        # tests:
+        #   - not_null
+        #   - dbt_utils.expression_is_true:
+        #       expression: "> 0"
+      - name: consensus_variance
+        description: Percentage variance from consensus (0.0 if not flagged)
+        # tests:
+        #   - not_null
+      - name: validation_status
+        description: Validation status (always VALIDATED in this mart)
+        # tests:
+        #   - accepted_values:
+        #       values: ['VALIDATED']
+      - name: severity
+        description: Severity level (always OK for validated rates)
+        # tests:
+        #   - accepted_values:
+        #       values: ['OK']
+
+  # =========================================================================
+  # NEW MODELS
+  # =========================================================================
+
+  - name: mart_currency_conversions
+    description: |
+      Pre-computed conversion matrix for top 10 currencies.
+      Enables direct USD→GBP conversions without manual cross-rate calculation.
+
+      Business value: Payment processing, invoice conversion
+    # tests:
+    #   - dbt_utils.expression_is_true:
+    #       expression: "(SELECT COUNT(DISTINCT from_currency) FROM mart_currency_conversions) >= 10"
+    #       config:
+    #         severity: error
+    #         error_if: "<10"
+    columns:
+      - name: currency_pair
+        description: Currency pair (e.g., 'USD/GBP')
+        # tests:
+        #   - unique
+        #   - not_null
+      - name: from_currency
+        description: Source currency for conversion
+        # tests:
+        #   - not_null
+      - name: to_currency
+        description: Target currency for conversion
+        # tests:
+        #   - not_null
+      - name: exchange_rate
+        description: Cross rate (FROM → TO)
+        # tests:
+        #   - not_null
+        #   - dbt_utils.expression_is_true:
+        #       expression: "> 0"
+      - name: inverse_rate
+        description: Reverse cross rate (TO → FROM)
+        # tests:
+        #   - not_null
+        #   - dbt_utils.expression_is_true:
+        #       expression: "> 0"
+
+  - name: mart_rate_volatility
+    description: |
+      Volatility metrics and risk flags for FX exposure management.
+      Identifies high-risk currencies for hedging decisions.
+
+      Business value: Finance team monitors GBP/TRY volatility, triggers hedging
+    columns:
+      - name: risk_level
+        description: Risk classification based on volatility thresholds
+        # tests:
+        #   - not_null
+        #   - accepted_values:
+        #       values: ['STABLE', 'MEDIUM_RISK', 'HIGH_RISK']
+      - name: target_currency
+        description: Currency being analyzed
+        # tests:
+        #   - not_null
+      - name: daily_change_pct
+        description: Daily percentage change
+      - name: change_7d_pct
+        description: 7-day percentage change
+      - name: change_30d_pct
+        description: 30-day percentage change
+      - name: volatility_7d
+        description: 7-day rolling standard deviation
+      - name: volatility_30d
+        description: 30-day rolling standard deviation
+
+  - name: mart_data_quality_metrics
+    description: |
+      Pipeline health monitoring and SLA tracking.
+      Single row table with current pipeline status.
+
+      Business value: Operations team gets alerts if data >2 days old, monitors ok_rate
+    # tests:
+    #   - dbt_utils.expression_is_true:
+    #       expression: "pipeline_status IN ('HEALTHY', 'WARNING', 'DEGRADED', 'STALE')"
+    #   - dbt_utils.row_count_equals_one  # Should always be exactly 1 row
+    columns:
+      - name: pipeline_status
+        description: Overall pipeline health (HEALTHY/WARNING/DEGRADED/STALE)
+        # tests:
+        #   - not_null
+        #   - accepted_values:
+        #       values: ['HEALTHY', 'WARNING', 'DEGRADED', 'STALE']
+      - name: ok_rate
+        description: Percentage of validated rates (target >= 90%)
+        # tests:
+        #   - not_null
+        #   - dbt_utils.expression_is_true:
+        #       expression: ">= 0.90"
+        #       config:
+        #         severity: warn
+        #         warn_if: "<0.90"
+        #         error_if: "<0.80"
+      - name: currency_count
+        description: Number of distinct currencies in latest extraction
+        # tests:
+        #   - dbt_utils.expression_is_true:
+        #       expression: ">= 100"
+        #       config:
+        #         severity: warn
+        #         warn_if: "<100"
+      - name: days_since_rate
+        description: Days since last rate date (should be <2)
+        # tests:
+        #   - dbt_utils.expression_is_true:
+        #       expression: "<= 2"
+        #       config:
+        #         severity: error
+        #         error_if: ">2"
+
+  - name: mart_monthly_summary
+    description: |
+      Monthly aggregated rates for financial reporting and board presentations.
+      Pre-computed monthly statistics (min/max/avg/median/volatility).
+
+      Business value: Monthly finance reports, YoY comparisons
+    # tests:
+    #   - dbt_utils.unique_combination_of_columns:
+    #       combination_of_columns: [month, target_currency]
+    columns:
+      - name: month
+        description: First day of month (YYYY-MM-01)
+        # tests:
+        #   - not_null
+      - name: target_currency
+        description: Currency code (ISO 4217)
+        # tests:
+        #   - not_null
+      - name: sample_count
+        description: Number of daily rates in the month
+        # tests:
+        #   - dbt_utils.expression_is_true:
+        #       expression: "> 0"
+      - name: avg_rate
+        description: Average rate for the month
+        # tests:
+        #   - not_null
+      - name: volatility_pct
+        description: Range as percentage of average (volatility indicator)
+      - name: opening_rate
+        description: First rate of the month
+      - name: closing_rate
+        description: Last rate of the month

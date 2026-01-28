@@ -1,0 +1,234 @@
+id: currency_rates_pipeline
+namespace: makerates
+description: |
+  End-to-end currency rates pipeline with dual-source validation.
+
+  Pipeline Steps:
+  1. Bronze: Extract from Frankfurter (ECB) and ExchangeRate-API using dlt
+  2. Silver: Transform & validate with dbt (consensus check)
+  3. Gold: Sync validated rates to DynamoDB hot tier
+
+  Data Flow:
+  Frankfurter → MinIO (Bronze) ┐
+                                 ├→ dbt (Silver) → DynamoDB (Hot)
+  ExchangeRate-API → MinIO      ┘
+
+  Schedule: Every 4 hours (or on-demand)
+
+labels:
+  project: makerates
+  layer: orchestration
+  env: development
+
+inputs:
+  - id: mode
+    type: SELECT
+    displayName: Sync Mode
+    description: Full sync or incremental (last N days)
+    defaults: full
+    values:
+      - full
+      - incremental
+
+  - id: days_lookback
+    type: INT
+    displayName: Days Lookback
+    description: Number of days to sync (incremental mode only)
+    defaults: 7
+
+variables:
+  python_cmd: .venv/bin/python
+  dbt_cmd: dbt
+  project_root: /app/workspace
+  duckdb_path: dbt_project/silver.duckdb
+  dynamodb_endpoint: http://dynamodb:8000
+
+tasks:
+  # ========================================
+  # BRONZE LAYER: Data Extraction with dlt
+  # ========================================
+
+  - id: extract_frankfurter
+    type: io.kestra.plugin.scripts.shell.Commands
+    displayName: "🟤 Extract Frankfurter (ECB) Rates"
+    description: "Extract EUR-based rates from Frankfurter API using dlt"
+    runner: PROCESS
+    commands:
+      - cd {{ vars.project_root }}
+      - {{ vars.python_cmd }} pipelines/frankfurter_to_bronze.py
+    timeout: PT5M
+
+  - id: extract_exchangerate
+    type: io.kestra.plugin.scripts.shell.Commands
+    displayName: "🟤 Extract ExchangeRate-API Rates"
+    description: "Extract USD-based rates from ExchangeRate-API using dlt"
+    runner: PROCESS
+    commands:
+      - cd {{ vars.project_root }}
+      - {{ vars.python_cmd }} pipelines/exchangerate_to_bronze.py
+    timeout: PT5M
+    retry:
+      type: constant
+      interval: PT30S
+      maxAttempt: 3
+
+#   # ========================================
+#   # SILVER LAYER: Data Transformation with dbt
+#   # ========================================
+
+#   - id: transform_silver
+#     type: io.kestra.plugin.scripts.shell.Commands
+#     displayName: "⚪ Transform to Silver Layer (dbt)"
+#     description: |
+#       Run dbt models to:
+#       - Unpack and normalize rates from Bronze
+#       - Perform consensus validation (Frankfurter vs ExchangeRate-API)
+#       - Generate fact_rates_validated table
+#     runner: PROCESS
+#     commands:
+#       - cd {{ vars.project_root }}/dbt_project
+#       - {{ vars.dbt_cmd }} run
+#       - {{ vars.dbt_cmd }} test
+#     timeout: PT10M
+#     dependencies:
+#     - extract_frankfurter
+#     - extract_exchangerate
+#   # ========================================
+#   # GOLD LAYER: Sync to DynamoDB Hot Tier
+#   # ========================================
+
+#   - id: init_dynamodb
+#     type: io.kestra.plugin.scripts.shell.Commands
+#     displayName: "🏆 Initialize DynamoDB Table"
+#     description: "Create currency_rates table with TTL if not exists"
+#     runner: PROCESS
+#     commands:
+#       - cd {{ vars.project_root }}
+#       - {{ vars.python_cmd }} scripts/init_dynamodb.py --endpoint {{ vars.dynamodb_endpoint }} --verify-only || {{ vars.python_cmd }} scripts/init_dynamodb.py --endpoint {{ vars.dynamodb_endpoint }}
+#     timeout: PT2M
+
+#   - id: sync_to_dynamodb
+#     type: io.kestra.plugin.scripts.shell.Commands
+#     displayName: "🏆 Sync to DynamoDB Hot Tier"
+#     description: "Sync validated rates from Silver (DuckDB) to DynamoDB"
+#     runner: PROCESS
+#     commands:
+#       - cd {{ vars.project_root }}
+#       - |
+#         {{ vars.python_cmd }} scripts/dbt_to_dynamodb.py \
+#           --endpoint {{ vars.dynamodb_endpoint }} \
+#           --duckdb-path {{ vars.duckdb_path }} \
+#           --mode {{ inputs.mode }} \
+#           --days {{ inputs.days_lookback }}
+#     timeout: PT5M
+#     retry:
+#       type: constant
+#       interval: PT10S
+#       maxAttempt: 3
+
+#   # ========================================
+#   # OBSERVABILITY: Metrics & Alerts
+#   # ========================================
+
+#   - id: collect_metrics
+#     type: io.kestra.plugin.scripts.shell.Commands
+#     displayName: "📊 Collect Pipeline Metrics"
+#     description: "Query DuckDB and DynamoDB for pipeline statistics"
+#     runner: PROCESS
+#     commands:
+#       - cd {{ vars.project_root }}
+#       - |
+#         echo "=== Pipeline Metrics ==="
+#         echo "Bronze Extractions:"
+#         {{ vars.python_cmd }} -c "
+#         import duckdb
+#         conn = duckdb.connect('{{ vars.duckdb_path }}', read_only=True)
+
+#         # Count rates by source
+#         print('\nFrankfurter rates:', conn.execute('SELECT COUNT(*) FROM main_silver.stg_frankfurter').fetchone()[0])
+#         print('ExchangeRate-API rates:', conn.execute('SELECT COUNT(*) FROM main_silver.stg_exchangerate').fetchone()[0])
+
+#         # Consensus check results
+#         print('\nValidation Results:')
+#         print('Validated rates:', conn.execute('SELECT COUNT(*) FROM main_silver.fact_rates_validated').fetchone()[0])
+#         print('Flagged anomalies:', conn.execute('SELECT COUNT(*) FROM main_silver.consensus_check WHERE status=\\'FLAGGED\\'').fetchone()[0])
+
+#         conn.close()
+#         "
+
+#         echo -e "\n=== DynamoDB Stats ==="
+#         {{ vars.python_cmd }} scripts/init_dynamodb.py --endpoint {{ vars.dynamodb_endpoint }} --verify-only 2>&1 | grep -A 5 "Table Schema"
+#     timeout: PT2M
+#     allowFailure: true
+
+#   - id: check_anomalies
+#     type: io.kestra.plugin.scripts.shell.Commands
+#     displayName: "🚨 Check for Rate Anomalies"
+#     description: "Alert if consensus check found significant variances"
+#     runner: PROCESS
+#     commands:
+#       - cd {{ vars.project_root }}
+#       - |
+#         {{ vars.python_cmd }} -c "
+#         import duckdb
+#         import sys
+
+#         conn = duckdb.connect('{{ vars.duckdb_path }}', read_only=True)
+
+#         # Check for critical anomalies
+#         critical = conn.execute(\"\"\"
+#           SELECT COUNT(*) FROM main_silver.consensus_check
+#           WHERE severity = 'CRITICAL'
+#         \"\"\").fetchone()[0]
+
+#         warnings = conn.execute(\"\"\"
+#           SELECT COUNT(*) FROM main_silver.consensus_check
+#           WHERE severity = 'WARNING'
+#         \"\"\").fetchone()[0]
+
+#         if critical > 0:
+#             print(f'⚠️  CRITICAL: {critical} rates have >1% variance!')
+#             print('This may indicate data quality issues or market anomalies.')
+#             # In production, send alert to Make.com webhook
+
+#         if warnings > 0:
+#             print(f'⚠️  WARNING: {warnings} rates have >0.5% variance')
+
+#         if critical == 0 and warnings == 0:
+#             print('✅ All rates passed consensus validation')
+
+#         conn.close()
+#         "
+#     timeout: PT1M
+#     allowFailure: true
+
+triggers:
+  # Run every 4 hours (0, 4, 8, 12, 16, 20)
+  - id: schedule_4h
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 */4 * * *"
+    inputs:
+      mode: incremental
+      days_lookback: 1
+
+# errors:
+#   - id: error_handler
+#     type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+#     url: "https://example.com/dummy_webhook"
+#     # url: "{{ secret('SLACK_WEBHOOK_URL') }}"
+#     payload: |
+#       {
+#         "text": "❌ MakeRates Pipeline Failed",
+#         "blocks": [
+#           {
+#             "type": "section",
+#             "text": {
+#               "type": "mrkdwn",
+#               "text": "*Pipeline*: {{ flow.id }}\n*Execution*: {{ execution.id }}\n*Status*: FAILED\n*Task*: {{ task.id }}"
+#             }
+#           }
+#         ]
+#       }
+
+
+    
