@@ -2,10 +2,10 @@
 
 <img width="2400" height="1350" alt="Make-rates" src="https://github.com/user-attachments/assets/08b72999-5b88-46c3-8ea6-ad9af60ea4bc" />
 
-A versatile and scalable way to integrate currency exchange rates from trusted API's : 
-**Make** currency analytics easy!
-A POC case study for Make.com
+  A versatile and scalable way to integrate currency exchange rates from trusted API's : 
+   **Make** currency analytics easy!
 ---
+A POC case study for Make.com
 
 ## 🚀 Quick Start (2 Minutes)
 
