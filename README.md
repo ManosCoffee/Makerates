@@ -1,6 +1,6 @@
 # MakeRates - Multi-Currency Data Pipeline
 
-<img width="2400" height="1350" alt="Make-rates" src="https://github.com/user-attachments/assets/73f281c8-a5f0-4863-9a0d-f7f9efe05060" />
+<img width="2400" height="1350" alt="Make-rates" src="https://github.com/user-attachments/assets/08b72999-5b88-46c3-8ea6-ad9af60ea4bc" />
 
 
 
