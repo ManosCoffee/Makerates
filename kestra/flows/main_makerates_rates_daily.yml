@@ -326,6 +326,7 @@ tasks:
       enabled: true
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: makerates-network
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
