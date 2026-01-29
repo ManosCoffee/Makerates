@@ -2,12 +2,85 @@
   
     
     
+      
+    
 
     create  table
       "analytics"."main_validation"."fact_rates_validated__dbt_tmp"
   
-    as (
+  (
+    extraction_id varchar not null,
+    rate_date date not null,
+    currency_pair varchar not null,
+    base_currency varchar not null check (base_currency = 'EUR'),
+    target_currency varchar not null,
+    exchange_rate double not null check (exchange_rate > 0 AND exchange_rate < 1000000),
+    validation_status varchar not null check (validation_status = 'VALIDATED'),
+    severity varchar not null check (severity = 'OK'),
+    extraction_timestamp timestamp not null,
+    source varchar not null,
+    source_tier varchar,
+    inverse_rate double not null check (inverse_rate > 0),
+    consensus_variance double not null check (consensus_variance = 0.0),
+    dbt_loaded_at timestamp with time zone,
+    model_name varchar
+    
+    )
+ ;
+    insert into "analytics"."main_validation"."fact_rates_validated__dbt_tmp" 
+  (
+    
       
+      extraction_id ,
+    
+      
+      rate_date ,
+    
+      
+      currency_pair ,
+    
+      
+      base_currency ,
+    
+      
+      target_currency ,
+    
+      
+      exchange_rate ,
+    
+      
+      validation_status ,
+    
+      
+      severity ,
+    
+      
+      extraction_timestamp ,
+    
+      
+      source ,
+    
+      
+      source_tier ,
+    
+      
+      inverse_rate ,
+    
+      
+      consensus_variance ,
+    
+      
+      dbt_loaded_at ,
+    
+      
+      model_name 
+    
+  )
+ (
+      
+    select extraction_id, rate_date, currency_pair, base_currency, target_currency, exchange_rate, validation_status, severity, extraction_timestamp, source, source_tier, inverse_rate, consensus_variance, dbt_loaded_at, model_name
+    from (
+        
 
 /*
 Fact Rates Validated: Final Validation Layer Output
@@ -102,6 +175,7 @@ LEFT JOIN anomalies a
 WHERE validation_status = 'VALIDATED'
 
 ORDER BY f.rate_date DESC, f.target_currency
+    ) as model_subq
     );
   
   

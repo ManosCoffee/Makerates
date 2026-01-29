@@ -182,7 +182,7 @@ models:
 
       - name: dbt_loaded_at
         description: Timestamp when dbt loaded this record
-        data_type: timestamp
+        data_type: timestamp with time zone
 
       - name: model_name
         description: dbt model name
@@ -194,11 +194,6 @@ models:
       - dbt_utils.recency:
           datepart: day
           field: rate_date
-          interval: 7  # Alert if no rates within 2 days
+          interval: 7  # Alert if no rates within 7 days
+          severity: warn  # Don't fail pipeline on stale data, just warn
 
-      # # Volume check: Should have consistent number of currency pairs
-      # # Typical: 150+ currencies from ECB
-      # - dbt_utils.expression_is_true:
-      #     expression: "(SELECT COUNT(DISTINCT target_currency) FROM fact_rates_validated WHERE rate_date = (SELECT MAX(rate_date) FROM fact_rates_validated)) >= 100"
-      #     config:
-      #       severity: warn  # Warn if fewer than 100 currencies

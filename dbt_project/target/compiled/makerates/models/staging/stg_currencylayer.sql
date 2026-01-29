@@ -3,10 +3,14 @@
 -- CurrencyLayer Staging
 -- Base Currency is typically USD (Free Tier) or EUR (Paid)
 
+
+
+
+
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table
     SELECT *
-    FROM iceberg_scan('s3://silver-bucket/iceberg/currencylayer_rates/metadata/00007-a32637fe-b979-4f3e-beb1-7d0bee54b5cc.metadata.json')
+    FROM iceberg_scan('s3://silver-bucket/iceberg/currencylayer_rates/metadata/00001-6757f660-4152-446b-aa6c-d4dcefadf954.metadata.json')
     WHERE source = 'currencylayer'
 ),
 
@@ -50,3 +54,4 @@ SELECT
 FROM deduplicated
 WHERE exchange_rate > 0
 ORDER BY extraction_timestamp DESC, target_currency
+

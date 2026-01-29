@@ -8,10 +8,29 @@
 -- CurrencyLayer Staging
 -- Base Currency is typically USD (Free Tier) or EUR (Paid)
 
+{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("currencylayer_rates")) %}
+
+{% if metadata_path is none %}
+    -- Table doesn't exist yet, return empty result with correct schema
+    SELECT
+        CAST(NULL AS VARCHAR) AS extraction_id,
+        CAST(NULL AS TIMESTAMP) AS extraction_timestamp,
+        CAST(NULL AS VARCHAR) AS source,
+        CAST(NULL AS VARCHAR) AS source_tier,
+        CAST(NULL AS VARCHAR) AS base_currency,
+        CAST(NULL AS VARCHAR) AS target_currency,
+        CAST(NULL AS DOUBLE) AS exchange_rate,
+        CAST(NULL AS DATE) AS rate_date,
+        CAST(NULL AS VARCHAR) AS currency_pair,
+        CAST(NULL AS DOUBLE) AS inverse_rate,
+        CAST(NULL AS TIMESTAMP) AS dbt_loaded_at
+    WHERE FALSE
+{% else %}
+
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table
     SELECT *
-    FROM iceberg_scan('{{ get_latest_iceberg_metadata("s3://silver-bucket/iceberg/currencylayer_rates") }}')
+    FROM iceberg_scan('{{ metadata_path }}')
     WHERE source = 'currencylayer'
 ),
 
@@ -55,3 +74,5 @@ SELECT
 FROM deduplicated
 WHERE exchange_rate > 0
 ORDER BY extraction_timestamp DESC, target_currency
+
+{% endif %}

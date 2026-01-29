@@ -13,10 +13,14 @@ Source: Public Frankfurter API (ECB data)
 Secondary Source for EUR-based exchange rates
 */
 
+
+
+
+
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table (Compacted & Deduplicated)
     SELECT *
-    FROM iceberg_scan('s3://silver-bucket/iceberg/frankfurter_rates/metadata/00015-1ac105ee-d9f6-4b91-a942-6e2033fb479c.metadata.json')
+    FROM iceberg_scan('s3://silver-bucket/iceberg/frankfurter_rates/metadata/00001-d10556a4-2f69-4cc3-a5de-d1414f3abaa8.metadata.json')
     WHERE source = 'frankfurter'
 ),
 
@@ -60,4 +64,6 @@ SELECT
 FROM deduplicated
 WHERE exchange_rate > 0
 ORDER BY extraction_timestamp DESC, target_currency
+
+
   );

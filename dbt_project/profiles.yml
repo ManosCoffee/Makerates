@@ -3,7 +3,7 @@ makerates:
   outputs:
     dev:
       type: duckdb
-      path: 'analytics.duckdb'  # Local DuckDB database for Gold layer + staging views
+      path: "{{ env_var('DUCKDB_PATH', 'analytics.duckdb') }}"  # Local DuckDB database for Gold layer + staging views
 
       # DuckDB extensions for Iceberg and S3
       extensions:
