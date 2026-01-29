@@ -59,24 +59,41 @@ models:
 
       Only includes rates that passed ALL validation layers.
       Ready for DynamoDB Hot Tier sync.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: extraction_id
         description: Unique extraction identifier
+        data_type: varchar
+        constraints:
+          - type: not_null
         tests:
           - not_null
 
       - name: rate_date
         description: Official rate date
+        data_type: date
+        constraints:
+          - type: not_null
         tests:
           - not_null
 
       - name: currency_pair
         description: Currency pair (e.g., EUR/USD)
+        data_type: varchar
+        constraints:
+          - type: not_null
         tests:
           - not_null
 
       - name: base_currency
         description: Base currency
+        data_type: varchar
+        constraints:
+          - type: not_null
+          - type: check
+            expression: "base_currency = 'EUR'"
         tests:
           - not_null
           - accepted_values:
@@ -85,11 +102,19 @@ models:
 
       - name: target_currency
         description: Target currency
+        data_type: varchar
+        constraints:
+          - type: not_null
         tests:
           - not_null
 
       - name: exchange_rate
         description: Validated exchange rate
+        data_type: double
+        constraints:
+          - type: not_null
+          - type: check
+            expression: "exchange_rate > 0 AND exchange_rate < 1000000"
         tests:
           - not_null
           - dbt_utils.expression_is_true:
@@ -99,6 +124,11 @@ models:
 
       - name: validation_status
         description: Final validation status
+        data_type: varchar
+        constraints:
+          - type: not_null
+          - type: check
+            expression: "validation_status = 'VALIDATED'"
         tests:
           - not_null
           - accepted_values:
@@ -107,11 +137,56 @@ models:
 
       - name: severity
         description: Severity (should be OK for all validated rates)
+        data_type: varchar
+        constraints:
+          - type: not_null
+          - type: check
+            expression: "severity = 'OK'"
         tests:
           - not_null
           - accepted_values:
               arguments:
                 values: ['OK']
+
+      - name: extraction_timestamp
+        description: When the data was extracted
+        data_type: timestamp
+        constraints:
+          - type: not_null
+
+      - name: source
+        description: Data source identifier
+        data_type: varchar
+        constraints:
+          - type: not_null
+
+      - name: source_tier
+        description: Data source tier (primary/secondary)
+        data_type: varchar
+
+      - name: inverse_rate
+        description: Inverse exchange rate (1/exchange_rate)
+        data_type: double
+        constraints:
+          - type: not_null
+          - type: check
+            expression: "inverse_rate > 0"
+
+      - name: consensus_variance
+        description: Variance from consensus (0.0 if validated)
+        data_type: double
+        constraints:
+          - type: not_null
+          - type: check
+            expression: "consensus_variance = 0.0"
+
+      - name: dbt_loaded_at
+        description: Timestamp when dbt loaded this record
+        data_type: timestamp
+
+      - name: model_name
+        description: dbt model name
+        data_type: varchar
 
     # Table-level tests (Layer 4: Statistical Validation)
     tests:

@@ -1,6 +1,8 @@
 {{
   config(
-    tags=['final', 'validated', 'hot-tier-source']
+    materialized='table',
+    tags=['final', 'validated', 'hot-tier-source'],
+    on_schema_change='fail'
   )
 }}
 
