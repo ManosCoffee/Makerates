@@ -306,8 +306,6 @@ tasks:
           - "--start-date={{ inputs.execution_date }}"
           - "--mode={{ vars.run_mode }}"
 
-  # ===== 3. TRANSFORM (dbt) =====
-  # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
   # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
   - id: transform_all
     type: io.kestra.plugin.dbt.cli.DbtCLI
