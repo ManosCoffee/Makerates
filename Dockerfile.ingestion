@@ -24,6 +24,7 @@ RUN uv sync --no-dev
 COPY src/ src/
 COPY scripts/ scripts/
 COPY dbt_project/ dbt_project/
+COPY mnt/kestra_shared_data/ /mnt/kestra_shared_data/
 
 # Create and set permissions for /data volume mount point
 RUN mkdir -p /data && chmod 777 /data

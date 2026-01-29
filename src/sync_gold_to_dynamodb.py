@@ -58,12 +58,12 @@ def sync_rates_to_dynamodb():
         sys.exit(1)
 
     # Extract config variables
-    duckdb_path = config["DUCKDB_PATH"]
+    duckdb_path = os.getenv("DUCKDB_PATH", "analytics.duckdb")
     table_name = config["DYNAMODB_TABLE_NAME"]
     endpoint_url = config.get("DYNAMODB_ENDPOINT_URL") or config.get("AWS_ENDPOINT_URL")
     region = config.get("DYNAMODB_REGION") or config.get("AWS_REGION")
-    mode = config["MODE"]
 
+    logger.debug(f"\n @! DEBUG DUCKDB PATH: {duckdb_path} \n")
     # Verify DuckDB path
     # If path is relative, check if it exists in current dir or project root
     if not os.path.exists(duckdb_path):
@@ -77,7 +77,7 @@ def sync_rates_to_dynamodb():
             logger.error(f"DuckDB database not found at {duckdb_path}. Please run 'dbt run' first.")
             sys.exit(1)
 
-    logger.info(f"Starting DynamoDB Sync. Source: {duckdb_path}, Target: {table_name}, Mode: {mode}")
+    logger.info(f"Starting DynamoDB Sync. Source: {duckdb_path}, Target: {table_name}")
 
     # --- 2. Read from DuckDB ---
     try:
@@ -86,27 +86,45 @@ def sync_rates_to_dynamodb():
         logger.error(f"Failed to connect to DuckDB: {e}")
         sys.exit(1)
 
+    start_dt = (datetime.now(timezone.utc) - timedelta(days=3)).strftime('%Y-%m-%d')
+    # query = f"""
+    # SELECT 
+    #     f.rate_date,
+    #     f.base_currency,
+    #     f.target_currency,
+    #     c.country_name,
+    #     c.region,
+    #     f.exchange_rate,
+    #     f.inverse_rate,
+    #     f.consensus_variance,
+    #     f.validation_status,
+    #     -- Computed/Metadata
+    #     concat(f.base_currency, '/', f.target_currency) as currency_pair
+    # FROM main_validation.fact_rates_validated f
+    # LEFT JOIN main_analytics.dim_countries c 
+    #     ON f.target_currency = c.currency_code
+    # WHERE f.rate_date >= '{start_dt}'
+    # """
+
     query = """
-    SELECT 
-        f.rate_date,
-        f.base_currency,
-        f.target_currency,
-        c.country_name,
-        c.region,
-        f.exchange_rate,
-        f.inverse_rate,
-        f.consensus_variance,
-        f.validation_status,
-        -- Computed/Metadata
-        concat(f.base_currency, '/', f.target_currency) as currency_pair
-    FROM main_validation.fact_rates_validated f
-    LEFT JOIN main_analytics.dim_countries c 
-        ON f.target_currency = c.currency_code
+        SELECT 
+            f.rate_date,
+            f.base_currency,
+            f.target_currency,
+            c.country_name,
+            c.region,
+            f.exchange_rate,
+            f.inverse_rate,
+            f.consensus_variance,
+            f.validation_status,
+            concat(f.base_currency, '/', f.target_currency) as currency_pair
+        FROM main_validation.fact_rates_validated f
+        LEFT JOIN main_analytics.dim_countries c 
+            ON f.target_currency = c.currency_code
+        WHERE f.rate_date = (SELECT MAX(rate_date) FROM main_validation.fact_rates_validated)
     """
     
-    if mode == "daily":
-        start_dt = (datetime.now(timezone.utc) - timedelta(days=3)).strftime('%Y-%m-%d')
-        query += f" WHERE f.rate_date >= '{start_dt}'"
+        
         
     logger.info("Executing DuckDB Query...")
     try:
@@ -138,8 +156,7 @@ def sync_rates_to_dynamodb():
     logger.info(f"Writing to DynamoDB Table: {table_name}...")
     
     ids_synced = 0
-    # Use batch_writer from the underlying table resource for efficiency where possible
-    # We access the internal table resource directly for batch operations
+    # Use batch_writer from the underlying table resource for efficiency
     with ddb_client.table.batch_writer() as batch:
         for row in results:
             item = dict(zip(columns, row))

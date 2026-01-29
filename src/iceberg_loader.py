@@ -267,7 +267,22 @@ class IcebergLoader:
 
             try:
                 table = catalog.load_table(full_table_name)
-            except Exception:
+                logger.info(f"Table {full_table_name} exists. Checking for schema evolution...")
+
+                # Schema Evolution: Add new columns if present in arrow_table
+                existing_fields = {field.name for field in table.schema().fields}
+                incoming_fields = set(arrow_table.schema.names)
+                new_fields = incoming_fields - existing_fields
+
+                if new_fields:
+                    logger.info(f"Schema evolution: Adding {len(new_fields)} new columns: {sorted(new_fields)}")
+                    with table.update_schema() as update:
+                        update.union_by_name(arrow_table.schema)
+                    logger.info("✅ Schema evolved successfully")
+                else:
+                    logger.info("No schema evolution needed")
+
+            except Exception as e:
                 logger.info(f"Table {full_table_name} not found. Creating...")
                 target_loc = self.env_config.get("TARGET_BUCKET")
                 # Ensure it ends with a table name 

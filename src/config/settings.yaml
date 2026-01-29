@@ -31,9 +31,7 @@ sync_job:
       - DYNAMODB_ENDPOINT_URL
       - DYNAMODB_REGION
       - DUCKDB_PATH
-      - MODE
   defaults:
     AWS_REGION: "us-east-1"
     DYNAMODB_TABLE_NAME: "currency_rates"
     DUCKDB_PATH: "analytics.duckdb"
-    MODE: "daily"

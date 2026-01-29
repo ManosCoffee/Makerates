@@ -43,13 +43,15 @@ ui-kestra:
 ui-minio:
     open http://localhost:9001
 
-# Open DuckDB Analytics (Gold)
+# Open DuckDB Analytics (Gold) - Access database from Docker volume
 db-analytics:
-    duckdb dbt_project/analytics.duckdb
+    @echo "📊 Accessing DuckDB from Docker volume..."
+    docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb
 
 # Open DuckDB Validation (Check flagged rates)
 db-validation:
-    duckdb dbt_project/analytics.duckdb "SELECT * FROM main_validation.consensus_check WHERE status = 'FLAGGED'"
+    @echo "🔍 Checking flagged rates from Docker volume..."
+    docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb "SELECT * FROM main_validation.consensus_check WHERE status = 'FLAGGED'"
 
 # Clean corrupted Iceberg catalog tables (fixes constraint violations)
 clean-iceberg:
@@ -65,17 +67,24 @@ clean-s3:
 
 # Hard Reset: Stop containers, wipe volumes, delete DB, and restart
 reset:
-    @echo "Cleaning storage..."
+    @echo "🧹 Cleaning storage..."
     just clean-iceberg
     just clean-s3
     @echo "🗑️ Removing volumes, networks, and containers..."
     docker compose down --volumes --remove-orphans
-    @vols=$(docker volume ls -q --filter "name=makerates-*"); if [ -n "$vols" ]; then docker volume rm $vols; else echo "No stale volumes to remove."; fi
+    @echo "🗑️ Removing makerates volumes..."
+    -docker volume rm makerates-dbt-data 2>/dev/null || true
+    -docker volume rm makerates-minio-data 2>/dev/null || true
+    -docker volume rm makerates-iceberg-db-data 2>/dev/null || true
+    -docker volume rm makerates-kestra-data 2>/dev/null || true
+    -docker volume rm makerates-kestra-db-data 2>/dev/null || true
     @echo "🧹 Cleaning local state..."
-    rm -f dbt_project/analytics.duckdb
-    rm -rf .dlt
-    rm -rf dbt_project/target
-    rm -rf logs && mkdir logs
+    -rm -f dbt_project/analytics.duckdb 2>/dev/null || true
+    -rm -rf .dlt 2>/dev/null || true
+    -rm -rf dbt_project/target 2>/dev/null || true
+    -rm -rf dbt_project/dbt_packages 2>/dev/null || true
+    -rm -rf logs 2>/dev/null || true
+    @mkdir -p logs
     @echo "✨ Environment is clean."
     @echo "🔄 Restarting..."
     just run

@@ -244,16 +244,16 @@ tasks:
   #  3. TRANSFORM (dbt) via Reusable Volume =====
   - id: validate_and_transform
     type: io.kestra.plugin.dbt.cli.DbtCLI
-    runner: DOCKER
-    docker:
+    allowWarnings: true
+    taskRunner: # Recommended: Use 'taskRunner' for modern Docker runner configuration
+      type: io.kestra.plugin.scripts.runner.docker.Docker
       image: makerates-ingestion-base:latest
       pullPolicy: NEVER
       networkMode: makerates-network
-      volumes:
-        - makerates-dbt-data:/data
     projectDir: /app/dbt_project
     profilesDir: /app/dbt_project
-    allowWarning: true
+    outputFiles:
+      - analytics.duckdb
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"

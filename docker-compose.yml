@@ -108,6 +108,7 @@ services:
       - kestra-data:/app/storage
       - ./kestra/flows:/app/flows
       - ./dbt_project:/app/dbt_project
+      - makerates-dbt-data:/data # Mount shared DBT volume to ensure it is created
     environment:
       KESTRA_CONFIGURATION: |
         datasources:
@@ -179,6 +180,7 @@ services:
       KESTRA_EXCHANGERATE_TABLE_NAME: ${EXCHANGERATE_TABLE_NAME}
       KESTRA_ICEBERG_CATALOG: ${ICEBERG_CATALOG}
       KESTRA_ICEBERG_NAMESPACE: ${ICEBERG_NAMESPACE}
+      KESTRA_HOST_PWD: ${PWD}
     depends_on:
       kestra-db:
         condition: service_healthy
@@ -198,14 +200,32 @@ services:
     environment:
       DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+    volumes:
+      - makerates-dbt-data:/data # Mount shared DBT volume
+  dynamodb-ui-admin:
+    image: aaronshaf/dynamodb-admin
+    container_name: makerates-dynamodb-admin
+    ports:
+      - "8004:8001"
+    environment:
+      DYNAMO_ENDPOINT: "http://dynamodb:8000"
+    depends_on:
+      - dynamodb
+    networks:
+      - makerates-network
+    restart: unless-stopped
 
 volumes:
   minio-data:
+    name: makerates-minio-data
   iceberg-db-data:
+    name: makerates-iceberg-db-data
   kestra-data:
-    name: kestra-data
+    name: makerates-kestra-data
   kestra-db-data:
-    name: kestra-db-data
+    name: makerates-kestra-db-data
+  makerates-dbt-data:
+    name: makerates-dbt-data
 
 networks:
   makerates-network:

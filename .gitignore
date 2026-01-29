@@ -52,7 +52,7 @@ htmlcov/
 !.envrc.example
 
 # Database files
-*.duckdb
+# *.duckdb
 *.db
 *.sqlite
 
@@ -67,3 +67,4 @@ docs/
 .dlt/
 dbt_project/target/ 
 dbt_project/dbt_packages/**
+/mnt/kestra_shared_data/**
