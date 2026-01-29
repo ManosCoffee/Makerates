@@ -146,8 +146,27 @@ tasks:
           - "--start-date={{ inputs.start_date }}"
           - "--end-date={{ inputs.end_date }}"
         allowFailure: true 
+  # ===== 2a. INITIALIZE ICEBERG CATALOG =====
+  - id: init_iceberg_catalog
+    description: "Initialize Iceberg catalog (prevents race condition)"
+    type: io.kestra.plugin.docker.Run
+    containerImage: makerates-ingestion-base:latest
+    pullPolicy: NEVER
+    networkMode: makerates-network
+    env:
+      PYICEBERG_CATALOG__DEFAULT__TYPE: "{{ vars.pyiceberg_catalog_default_type }}"
+      PYICEBERG_CATALOG__DEFAULT__URI: "{{ vars.pyiceberg_catalog_default_uri }}"
+      PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: "{{ vars.minio_endpoint }}"
+      PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: "{{ vars.pyiceberg_catalog_default_warehouse }}"
+      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+      AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+      ICEBERG_CATALOG: "{{ vars.iceberg_catalog }}"
+      ICEBERG_NAMESPACE: "{{ vars.iceberg_namespace }}"
+    commands:
+      - init_iceberg_catalog
 
-  # ===== 2b. COMPACT TO ICEBERG (Bronze -> Silver) =====
+  # ===== 2b. LOAD TO ICEBERG (Bronze -> Silver) =====
   - id: create_iceberg_sources
     description: "Compact backfill JSONL into optimized Iceberg tables"
     type: io.kestra.plugin.core.flow.Parallel
@@ -185,11 +204,6 @@ tasks:
           - "--end-date={{ inputs.end_date }}"
           - "--mode={{vars.run_mode}}"
 
-      # ExchangeRate skipped in backfill usually? Or check flow logic.
-      # The backfill flow above does NOT have exchangerate task in 'backfill_parallel'!
-      # It only has frankfurter and currencylayer.
-      # So we only include those here.
-
       - id: load_currencylayer_to_iceberg
         dependsOn:
           - extract_currencylayer
@@ -224,7 +238,8 @@ tasks:
           - "--mode={{vars.run_mode}}"
 
   # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
-  - id: transform_staging
+  # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
+  - id: transform_all
     type: io.kestra.plugin.dbt.cli.DbtCLI
     runner: DOCKER
     docker:
@@ -242,66 +257,17 @@ tasks:
       MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
       MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
       DUCKDB_PATH: "/data/analytics.duckdb"
+      DBT_SILVER_BUCKET: "{{ vars.dbt_silver_bucket }}"
+      DBT_ICEBERG_BASE_PATH: "{{ vars.dbt_iceberg_base_path }}"
     commands:
       - dbt deps --project-dir /app/dbt_project --profiles-dir /app/dbt_project
       - dbt seed --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project --select tag:staging --vars '{"silver_bucket":"{{ vars.dbt_silver_bucket }}","iceberg_base_path":"{{ vars.dbt_iceberg_base_path }}"}'
+      # Run all models in dependency order
+      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project
 
-  - id: transform_validation
-    type: io.kestra.plugin.dbt.cli.DbtCLI
-    runner: DOCKER
-    docker:
-      image: makerates-ingestion-base:latest
-      pullPolicy: NEVER
-      networkMode: makerates-network
-      volumes:
-        - makerates-dbt-data:/data
-    projectDir: /app/dbt_project
-    profilesDir: /app/dbt_project
-    env:
-      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
-      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
-      MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
-      MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
-      MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
-      DUCKDB_PATH: "/data/analytics.duckdb"
-    commands:
-      - dbt deps --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project --select tag:validation --vars '{"silver_bucket":"{{ vars.dbt_silver_bucket }}","iceberg_base_path":"{{ vars.dbt_iceberg_base_path }}"}'
-
-  - id: transform_analytics
-    type: io.kestra.plugin.dbt.cli.DbtCLI
-    runner: DOCKER
-    docker:
-      image: makerates-ingestion-base:latest
-      pullPolicy: NEVER
-      networkMode: makerates-network
-      volumes:
-        - makerates-dbt-data:/data
-    projectDir: /app/dbt_project
-    profilesDir: /app/dbt_project
-    env:
-      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
-      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
-      MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
-      MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
-      MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
-      DUCKDB_PATH: "/data/analytics.duckdb"
-    commands:
-      - dbt deps --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project --select tag:analytics --vars '{"silver_bucket":"{{ vars.dbt_silver_bucket }}","iceberg_base_path":"{{ vars.dbt_iceberg_base_path }}"}'
-
-  - id: log_summary
-    type: io.kestra.core.tasks.log.Log
-    message: |
-      ✅ Backfill Complete
-      ===========================================
-      Range: {{ inputs.start_date }} to {{ inputs.end_date }}
-      ===========================================
 
 errors:
   - id: backfill_error
-    type: io.kestra.core.tasks.log.Log
-    message: |
-      ❌ Backfill Failed
-      Range: {{ inputs.start_date
+    type: io.kestra.plugin.core.log.Log
+    message: I'm failing {{ errorLogs()[0]['taskId'] }} # Because errorLogs() is an array, the first taskId to fail is retrieved.
+    level: ERROR

@@ -179,7 +179,21 @@ class IcebergLoader:
         query = f"""
         CREATE OR REPLACE TEMP TABLE bronze_raw AS 
         SELECT *
-        FROM read_json_auto('{source_pattern}', format='newline_delimited', filename=true, union_by_name=true);
+        FROM read_json('{source_pattern}',
+            format='newline_delimited',
+            filename=true,
+            columns={{
+                'extraction_id': 'VARCHAR',
+                'extraction_timestamp': 'VARCHAR',
+                'source': 'VARCHAR',
+                'source_tier': 'VARCHAR',
+                'base_currency': 'VARCHAR',
+                'rate_date': 'VARCHAR',
+                'rates': 'MAP(VARCHAR, DOUBLE)',
+                'timestamp': 'BIGINT',
+                'http_status_code': 'INTEGER'
+            }}
+        );
         """
         try:
             self.con.sql(query)

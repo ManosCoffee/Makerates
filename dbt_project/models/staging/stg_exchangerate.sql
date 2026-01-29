@@ -43,12 +43,19 @@ WITH bronze_data AS (
 
 -- Extract all rates__* columns into rows using UNPIVOT
 -- Using same currency list as Frankfurter for consistency
+-- Extract rates map into rows using UNNEST
 unnested_rates AS (
-    UNPIVOT bronze_data
-    ON COLUMNS('^rates__.*')
-    INTO
-        NAME target_currency
-        VALUE exchange_rate
+    SELECT 
+        b.extraction_id,
+        b.extraction_timestamp,
+        b.source,
+        b.source_tier,
+        b.base_currency,
+        b.rate_date,
+        -- Unnest the map entries (turns MAP into list of structs)
+        unnest(map_entries(b.rates)).key AS target_currency,
+        unnest(map_entries(b.rates)).value AS exchange_rate
+    FROM bronze_data b
 ),
 
 ranked_rates AS (

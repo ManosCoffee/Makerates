@@ -61,7 +61,10 @@ variables:
   exchangerate_table_name: "{{envs.exchangerate_table_name}}"
   iceberg_catalog: "{{envs.iceberg_catalog}}"
   iceberg_namespace: "{{envs.iceberg_namespace}}"
-  
+  # dbt variables
+  dbt_silver_bucket: "s3://{{ envs.silver_bucket }}"
+  dbt_iceberg_base_path: "iceberg"
+
 
 
 
@@ -180,6 +183,26 @@ tasks:
         timeout: PT5M
         allowFailure: true
 
+  # ===== 2a. INITIALIZE ICEBERG CATALOG =====
+  - id: init_iceberg_catalog
+    description: "Initialize Iceberg catalog (prevents race condition)"
+    type: io.kestra.plugin.docker.Run
+    containerImage: makerates-ingestion-base:latest
+    pullPolicy: NEVER
+    networkMode: makerates-network
+    env:
+      PYICEBERG_CATALOG__DEFAULT__TYPE: "{{ vars.pyiceberg_catalog_default_type }}"
+      PYICEBERG_CATALOG__DEFAULT__URI: "{{ vars.pyiceberg_catalog_default_uri }}"
+      PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: "{{ vars.minio_endpoint }}"
+      PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: "{{ vars.pyiceberg_catalog_default_warehouse }}"
+      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+      AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+      ICEBERG_CATALOG: "{{ vars.iceberg_catalog }}"
+      ICEBERG_NAMESPACE: "{{ vars.iceberg_namespace }}"
+    commands:
+      - init_iceberg_catalog
+
   # ===== 2b. COMPACT TO ICEBERG (Bronze -> Silver) =====
   - id: create_iceberg_sources
     description: "Compact daily JSONL into optimized Iceberg tables"
@@ -284,31 +307,33 @@ tasks:
           - "--mode={{ vars.run_mode }}"
 
   # ===== 3. TRANSFORM (dbt) =====
-  - id: transform_silver
+  # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
+  # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
+  - id: transform_all
     type: io.kestra.plugin.dbt.cli.DbtCLI
     runner: DOCKER
     docker:
       image: makerates-ingestion-base:latest
       pullPolicy: NEVER
       networkMode: makerates-network
-    
-    # dbt configuration
+      volumes:
+        - makerates-dbt-data:/data
     projectDir: /app/dbt_project
-    profilesDir: /app/dbt_project # profiles.yml location
-    
-    # Pass environment variables for profiles.yml
+    profilesDir: /app/dbt_project
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
       MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
       MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
       MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
-    
+      DUCKDB_PATH: "/data/analytics.duckdb"
+      DBT_SILVER_BUCKET: "{{ vars.dbt_silver_bucket }}"
+      DBT_ICEBERG_BASE_PATH: "{{ vars.dbt_iceberg_base_path }}"
     commands:
       - dbt deps --project-dir /app/dbt_project --profiles-dir /app/dbt_project
       - dbt seed --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt run --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt test --project-dir /app/dbt_project --profiles-dir /app/dbt_project
+      # Run all models in dependency order
+      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project
 
   # ===== 4. UPSERT TO DYNAMODB =====
   - id: sync_to_dynamodb
@@ -317,6 +342,9 @@ tasks:
     pullPolicy: NEVER
     networkMode: makerates-network
     workingDir: /app
+    docker:
+      volumes:
+        - makerates-dbt-data:/data
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
@@ -327,7 +355,7 @@ tasks:
       DYNAMODB_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
       DYNAMODB_REGION: "{{ vars.ddb_default_region }}"
       
-      DUCKDB_PATH: "/app/dbt_project/analytics.duckdb"
+      DUCKDB_PATH: "/data/analytics.duckdb"
       MODE: "{{ vars.run_mode }}"
       
     commands:
@@ -348,16 +376,7 @@ triggers:
       execution_date: "{{ trigger.date | date('yyyy-MM-dd') }}"
 
 errors:
-  - id: error_handler
-    type: io.kestra.core.tasks.log.Log
-    message: |
-      ❌ Pipeline Failed
-      Date: {{ inputs.execution_date }}
-      Task: {{ task.id }}
-
-      Common Issues:
-      1. API quota exceeded → Check quota tracker
-      2. dbt run failed → Check data quality
-      3. DynamoDB sync failed → Check network/credentials
-
-      Recovery: Pipeline is idempotent - safe to re-run
+  - id: backfill_error
+    type: io.kestra.plugin.core.log.Log
+    message: I'm failing {{ errorLogs()[0]['taskId'] }} 
+    level: ERROR

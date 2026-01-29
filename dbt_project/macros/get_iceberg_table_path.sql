@@ -7,8 +7,8 @@
        dbt build --vars '{"silver_bucket": "s3://silver-bucket", "iceberg_base_path": "iceberg"}'
     #}
 
-    {% set silver_bucket = var('silver_bucket', 's3://silver-bucket') %}
-    {% set iceberg_base_path = var('iceberg_base_path', 'iceberg') %}
+    {% set silver_bucket = env_var('DBT_SILVER_BUCKET', 's3://silver-bucket') %}
+    {% set iceberg_base_path = env_var('DBT_ICEBERG_BASE_PATH', 'iceberg') %}
 
     {{ return(silver_bucket ~ '/' ~ iceberg_base_path ~ '/' ~ table_name) }}
 

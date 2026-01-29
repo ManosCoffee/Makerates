@@ -24,7 +24,7 @@ models:
   makerates:
     # Staging Layer
     staging:
-      +materialized: view
+      +materialized: table
       +schema: staging
       +tags: ["staging"]
 
