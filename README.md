@@ -1,5 +1,9 @@
 # MakeRates - Multi-Currency Data Pipeline
 
+<img width="2400" height="1350" alt="Make-rates" src="https://github.com/user-attachments/assets/73f281c8-a5f0-4863-9a0d-f7f9efe05060" />
+
+
+
 **Data Engineer Home Assignment** - Make.com  
 **Architecture**: Medallion (Bronze → Silver Iceberg → Gold DuckDB)  
 **Orchestration**: Kestra Workflows
