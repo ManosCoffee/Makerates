@@ -64,6 +64,6 @@ htmlcov/
 Thumbs.db
 
 
-
+target/
 docs/
 .dlt/
