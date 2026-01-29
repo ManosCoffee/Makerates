@@ -43,6 +43,7 @@ variables:
   ddb_access_key_id: "{{ envs.dynamodb_aws_access_key_id }}"
   ddb_secret_access_key: "{{ envs.dynamodb_aws_secret_access_key }}"
   ddb_default_region: "{{ envs.dynamodb_aws_default_region }}"
+  dynamodb_currencies_table_name: "{{ envs.dynamodb_currencies_table_name }}"
   # api keys
   currencylayer_api_key: "{{ envs.currencylayer_api_key }}"
   exchangerate_api_key: "{{ envs.exchangerate_api_key }}"
@@ -187,6 +188,7 @@ tasks:
   - id: init_iceberg_catalog
     description: "Initialize Iceberg catalog (prevents race condition)"
     type: io.kestra.plugin.docker.Run
+    allowWarning: true
     containerImage: makerates-ingestion-base:latest
     pullPolicy: NEVER
     networkMode: makerates-network
@@ -207,6 +209,7 @@ tasks:
   - id: create_iceberg_sources
     description: "Compact daily JSONL into optimized Iceberg tables"
     type: io.kestra.plugin.core.flow.Parallel
+    allowWarning: true
     tasks:
       - id: load_frankfurter_to_iceberg
         dependsOn:
@@ -307,8 +310,9 @@ tasks:
           - "--mode={{ vars.run_mode }}"
 
   # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
-  - id: transform_all
+  - id: validate_and_transform      
     type: io.kestra.plugin.dbt.cli.DbtCLI
+    allowWarning: true
     runner: DOCKER
     docker:
       image: makerates-ingestion-base:latest
@@ -336,6 +340,8 @@ tasks:
   # ===== 4. UPSERT TO DYNAMODB =====
   - id: sync_to_dynamodb
     type: io.kestra.plugin.docker.Run
+    dependsOn:
+      - validate_and_transform
     containerImage: makerates-ingestion-base:latest
     pullPolicy: NEVER
     networkMode: makerates-network
@@ -349,7 +355,7 @@ tasks:
       AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
       AWS_REGION: "{{ vars.ddb_default_region }}"
       
-      DYNAMODB_TABLE_NAME: "currency_rates"
+      DYNAMODB_TABLE_NAME: "{{ vars.dynamodb_currencies_table_name }}"
       DYNAMODB_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
       DYNAMODB_REGION: "{{ vars.ddb_default_region }}"
       

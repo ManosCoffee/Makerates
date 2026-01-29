@@ -148,10 +148,10 @@ def main():
             success = False
             
     if success:
-        print("\n✅ All tables initialized successfully")
+        print("\n All tables initialized successfully")
         sys.exit(0)
     else:
-        print("\n❌ One or more tables failed")
+        print("\n One or more tables failed")
         sys.exit(1)
 
 if __name__ == "__main__":
