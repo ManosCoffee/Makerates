@@ -1,13 +1,10 @@
-# MakeRates - Multi-Currency Platform 
+# MakeRates - FX Currency Intelligence Service 
 
 <img width="2400" height="1350" alt="Make-rates" src="https://github.com/user-attachments/assets/08b72999-5b88-46c3-8ea6-ad9af60ea4bc" />
 
-
-
-**Data Engineer Home Assignment** - Make.com  
-**Architecture**: Medallion (Bronze → Silver Iceberg → Gold DuckDB)  
-**Orchestration**: Kestra Workflows
-
+A versatile and scalable way to integrate currency exchange rates from trusted API's : 
+**Make** currency analytics easy!
+A POC case study for Make.com
 ---
 
 ## 🚀 Quick Start (2 Minutes)
