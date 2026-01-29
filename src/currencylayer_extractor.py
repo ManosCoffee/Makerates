@@ -131,12 +131,7 @@ def currencylayer_range_source(start_date: str, end_date: str):
                     "base_currency": base_currency,
                     "rate_date": date_key,
                     "rates": cleaned_rates,
-                    "api_response_raw": {
-                        "date": date_key,
-                        "base": base_currency,
-                        "rates": cleaned_rates,
-                        "source_meta": "currencylayer_timeframe"
-                    }, 
+                    "api_response_raw": data,
                     "http_status_code": response.status_code
                 }
 

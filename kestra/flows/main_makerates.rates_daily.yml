@@ -61,7 +61,10 @@ variables:
   exchangerate_table_name: "{{envs.exchangerate_table_name}}"
   iceberg_catalog: "{{envs.iceberg_catalog}}"
   iceberg_namespace: "{{envs.iceberg_namespace}}"
-  
+  # dbt variables
+  dbt_silver_bucket: "s3://{{ envs.silver_bucket }}"
+  dbt_iceberg_base_path: "iceberg"
+
 
 
 
@@ -284,31 +287,71 @@ tasks:
           - "--mode={{ vars.run_mode }}"
 
   # ===== 3. TRANSFORM (dbt) =====
-  - id: transform_silver
+  # ===== 3. TRANSFORM (dbt) via Reusable Volume =====
+  - id: transform_staging
     type: io.kestra.plugin.dbt.cli.DbtCLI
     runner: DOCKER
     docker:
       image: makerates-ingestion-base:latest
       pullPolicy: NEVER
       networkMode: makerates-network
-    
-    # dbt configuration
+      volumes:
+        - makerates-dbt-data:/data
     projectDir: /app/dbt_project
-    profilesDir: /app/dbt_project # profiles.yml location
-    
-    # Pass environment variables for profiles.yml
+    profilesDir: /app/dbt_project
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
       MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
       MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
       MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
-    
+      DUCKDB_PATH: "/data/analytics.duckdb"
     commands:
       - dbt deps --project-dir /app/dbt_project --profiles-dir /app/dbt_project
       - dbt seed --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt run --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt test --project-dir /app/dbt_project --profiles-dir /app/dbt_project
+      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project --select tag:staging --vars '{"silver_bucket":"{{ vars.dbt_silver_bucket }}","iceberg_base_path":"{{ vars.dbt_iceberg_base_path }}"}'
+
+  - id: transform_validation
+    type: io.kestra.plugin.dbt.cli.DbtCLI
+    runner: DOCKER
+    docker:
+      image: makerates-ingestion-base:latest
+      pullPolicy: NEVER
+      networkMode: makerates-network
+      volumes:
+        - makerates-dbt-data:/data
+    projectDir: /app/dbt_project
+    profilesDir: /app/dbt_project
+    env:
+      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+      MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
+      MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
+      MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
+      DUCKDB_PATH: "/data/analytics.duckdb"
+    commands:
+      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project --select tag:validation --vars '{"silver_bucket":"{{ vars.dbt_silver_bucket }}","iceberg_base_path":"{{ vars.dbt_iceberg_base_path }}"}'
+
+  - id: transform_analytics
+    type: io.kestra.plugin.dbt.cli.DbtCLI
+    runner: DOCKER
+    docker:
+      image: makerates-ingestion-base:latest
+      pullPolicy: NEVER
+      networkMode: makerates-network
+      volumes:
+        - makerates-dbt-data:/data
+    projectDir: /app/dbt_project
+    profilesDir: /app/dbt_project
+    env:
+      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+      MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
+      MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
+      MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
+      DUCKDB_PATH: "/data/analytics.duckdb"
+    commands:
+      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project --select tag:analytics --vars '{"silver_bucket":"{{ vars.dbt_silver_bucket }}","iceberg_base_path":"{{ vars.dbt_iceberg_base_path }}"}'
 
   # ===== 4. UPSERT TO DYNAMODB =====
   - id: sync_to_dynamodb
@@ -317,6 +360,9 @@ tasks:
     pullPolicy: NEVER
     networkMode: makerates-network
     workingDir: /app
+    docker:
+      volumes:
+        - makerates-dbt-data:/data
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
@@ -327,7 +373,7 @@ tasks:
       DYNAMODB_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
       DYNAMODB_REGION: "{{ vars.ddb_default_region }}"
       
-      DUCKDB_PATH: "/app/dbt_project/analytics.duckdb"
+      DUCKDB_PATH: "/data/analytics.duckdb"
       MODE: "{{ vars.run_mode }}"
       
     commands:

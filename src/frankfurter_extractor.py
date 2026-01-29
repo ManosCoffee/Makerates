@@ -112,11 +112,7 @@ def frankfurter_range_source(start_date: str, end_date: str):
                     "base_currency": base_currency,
                     "rate_date": date_str,
                     "rates": rates_dict,
-                    "api_response_raw": { # Store subset as audit for this day
-                        "date": date_str,
-                        "base": base_currency,
-                        "rates": rates_dict
-                    },
+                    "api_response_raw": data,  # Store complete response for schema consistency
                     "http_status_code": response.status_code,
                     "response_size_bytes": len(response.content) # Approx share
                 }

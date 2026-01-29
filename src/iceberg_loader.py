@@ -9,10 +9,9 @@ from duckdb import DuckDBPyConnection, connect
 from pyiceberg.catalog import load_catalog
 from utils.s3_helper import get_s3_client, check_s3_prefix_exists
 from utils.helpers import load_config
+from utils.logging_config import root_logger as logger
 
-# Configure Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Configure Logging (Already done in root_logger)
 
 class IcebergLoader:
     """
