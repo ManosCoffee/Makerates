@@ -43,12 +43,16 @@ ui-kestra:
 ui-minio:
     open http://localhost:9001
 
-# Open DuckDB Analytics (Gold) - Access database from Docker volume
+# DUCKDB
+## Initialize DuckDB
+# init-duckdb:
+#     cd data/duckdb && duckdb analytics.duckdb 
+## Open DuckDB Analytics (Gold) - Access database from Docker volume
 db-analytics:
     @echo "📊 Accessing DuckDB from Docker volume..."
     docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb
 
-# Open DuckDB Validation (Check flagged rates)
+## Open DuckDB Validation (Check flagged rates)
 db-validation:
     @echo "🔍 Checking flagged rates from Docker volume..."
     docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb "SELECT * FROM main_validation.consensus_check WHERE status = 'FLAGGED'"

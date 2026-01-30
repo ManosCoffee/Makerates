@@ -108,6 +108,7 @@ services:
       - kestra-data:/app/storage
       - ./kestra/flows:/app/flows
       - ./dbt_project:/app/dbt_project
+      # - ./data/duckdb:/duckdb
       - makerates-dbt-data:/data # Mount shared DBT volume to ensure it is created
     environment:
       KESTRA_CONFIGURATION: |
