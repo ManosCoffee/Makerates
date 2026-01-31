@@ -105,11 +105,20 @@ class QuotaManager:
             logger.error(f"Failed to record request for {api_source}")
             return False
 
-        # 3. Log Check
-        usage_pct = (updated_item.get("request_count", 0) / updated_item.get("quota_limit", 1)) * 100
+        # 3. Log Check and Auto-Throttle
+        request_count = updated_item.get("request_count", 0)
         limit = updated_item.get("quota_limit", 0)
+        usage_pct = (request_count / limit * 100) if limit > 0 else 0
+
+        # Auto-throttle when quota exhausted
+        if request_count >= limit:
+            logger.warning(f"{api_source} quota EXHAUSTED ({request_count}/{limit}) - Auto-throttling")
+            self.mark_api_throttled(api_source, date=cycle_date)
+            return False  # Signal quota exhausted
+
+        # Warn when approaching limit
         if usage_pct >= 90 and limit < 1000000:
-             logger.warning(f"{api_source} monthly quota is {usage_pct:.1f}% used ({updated_item['request_count']}/{limit})")
+             logger.warning(f"{api_source} monthly quota is {usage_pct:.1f}% used ({request_count}/{limit})")
 
         return True
 

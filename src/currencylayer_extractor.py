@@ -51,12 +51,34 @@ def currencylayer_source(date: Optional[str] = None):
 
         try:
             response = requests.get(url, timeout=10)
+
+            # CRITICAL: Detect quota exhaustion BEFORE raising
+            if response.status_code == 429:
+                logger.error("CurrencyLayer returned 429 (rate limited)")
+                quota_mgr = QuotaManager(endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000"))
+                failover_api = quota_mgr.mark_api_throttled(api_source="currencylayer")
+
+                if failover_api:
+                    logger.warning(f"Failover to {failover_api} recommended")
+
+                raise RuntimeError("CurrencyLayer quota exhausted (HTTP 429), marked as throttled")
+
             response.raise_for_status()
             data = response.json()
 
+            # Check for quota exhaustion in response body (CurrencyLayer returns 200 with error)
             if not data.get("success"):
                 error_info = data.get("error", {})
-                raise RuntimeError(f"CurrencyLayer API Error {error_info.get('code')}: {error_info.get('info')}")
+                error_code = error_info.get("code")
+
+                # Error code 104: Monthly request volume reached
+                if error_code == 104:
+                    logger.error(f"CurrencyLayer quota exhausted (error code 104)")
+                    quota_mgr = QuotaManager(endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000"))
+                    quota_mgr.mark_api_throttled(api_source="currencylayer")
+                    raise RuntimeError("CurrencyLayer quota exhausted (error code 104), marked as throttled")
+
+                raise RuntimeError(f"CurrencyLayer API Error {error_code}: {error_info.get('info')}")
 
             # Build Record
             timestamp = data.get("timestamp")
@@ -109,12 +131,30 @@ def currencylayer_range_source(start_date: str, end_date: str):
         try:
             logger.info(f"Fetching CurrencyLayer Timeframe: {start_date} to {end_date}")
             response = requests.get(url, timeout=30)
+
+            # CRITICAL: Detect quota exhaustion BEFORE raising
+            if response.status_code == 429:
+                logger.error("CurrencyLayer returned 429 (rate limited)")
+                quota_mgr = QuotaManager(endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000"))
+                quota_mgr.mark_api_throttled(api_source="currencylayer")
+                raise RuntimeError("CurrencyLayer quota exhausted (HTTP 429), marked as throttled")
+
             response.raise_for_status()
             data = response.json()
 
+            # Check for quota exhaustion in response body
             if not data.get("success"):
                 error_info = data.get("error", {})
-                raise RuntimeError(f"CurrencyLayer API Error {error_info.get('code')}: {error_info.get('info')} - Note: Timeframe requires Professional Plan.")
+                error_code = error_info.get("code")
+
+                # Error code 104: Monthly request volume reached
+                if error_code == 104:
+                    logger.error(f"CurrencyLayer quota exhausted (error code 104)")
+                    quota_mgr = QuotaManager(endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000"))
+                    quota_mgr.mark_api_throttled(api_source="currencylayer")
+                    raise RuntimeError("CurrencyLayer quota exhausted (error code 104), marked as throttled")
+
+                raise RuntimeError(f"CurrencyLayer API Error {error_code}: {error_info.get('info')} - Note: Timeframe requires Professional Plan.")
 
             base_currency = data.get("source", "USD")
             quotes_by_date = data.get("quotes", {}) # Format: {"2021-01-01": {"USDGBP": ...}}

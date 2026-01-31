@@ -61,6 +61,18 @@ def exchangerate_source(api_key: str = None, use_v6: bool = False):
 
         try:
             response = requests.get(base_url, timeout=10)
+
+            # CRITICAL: Detect quota exhaustion BEFORE raising
+            if response.status_code == 429:
+                logger.error("ExchangeRate-API returned 429 (rate limited)")
+                quota_mgr = QuotaManager(endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000"))
+                failover_api = quota_mgr.mark_api_throttled(api_source="exchangerate")
+
+                if failover_api:
+                    logger.warning(f"Failover to {failover_api} recommended")
+
+                raise RuntimeError("ExchangeRate-API quota exhausted (HTTP 429), marked as throttled")
+
             response.raise_for_status()
             data = response.json()
 

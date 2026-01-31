@@ -42,10 +42,23 @@ def frankfurter_source():
         """
 
         # Fetch from public Frankfurter API (no need to self-host)
-        url = "https://api.frankfurter.app/latest?from=EUR"
+        url = "https://api.frankfurter.app/latest?from=USD"
 
         try:
             response = requests.get(url, timeout=10)
+
+            # CRITICAL: Detect quota exhaustion BEFORE raising
+            if response.status_code == 429:
+                logger.error("Frankfurter returned 429 (rate limited)")
+                # Mark as throttled, get failover API
+                quota_mgr = QuotaManager(endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000"))
+                failover_api = quota_mgr.mark_api_throttled(api_source="frankfurter")
+
+                if failover_api:
+                    logger.warning(f"Failover to {failover_api} recommended")
+
+                raise RuntimeError("Frankfurter quota exhausted (HTTP 429), marked as throttled")
+
             response.raise_for_status()
             data = response.json()
 
@@ -91,10 +104,22 @@ def frankfurter_range_source(start_date: str, end_date: str):
         Data in control line-by-line with dlt! :)
         """
         # Frankfurter Time Series Endpoint
-        url = f"https://api.frankfurter.app/{start_date}..{end_date}?from=EUR"
+        url = f"https://api.frankfurter.app/{start_date}..{end_date}?from=USD"
         
         try:
             response = requests.get(url, timeout=30) # Longer timeout for range
+
+            # CRITICAL: Detect quota exhaustion BEFORE raising
+            if response.status_code == 429:
+                logger.error("Frankfurter returned 429 (rate limited)")
+                quota_mgr = QuotaManager(endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://localhost:8000"))
+                failover_api = quota_mgr.mark_api_throttled(api_source="frankfurter")
+
+                if failover_api:
+                    logger.warning(f"Failover to {failover_api} recommended")
+
+                raise RuntimeError("Frankfurter quota exhausted (HTTP 429), marked as throttled")
+
             response.raise_for_status()
             data = response.json()
             

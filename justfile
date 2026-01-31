@@ -1,8 +1,13 @@
 # Justfile for Makerates Pipeine
+set dotenv-load := true
 
 # List all available commands
 default:
     @just --list
+
+init:
+    just run 
+    just init-analytics-bucket
 
 # Run
 run:
@@ -57,6 +62,17 @@ db-validation:
     @echo "🔍 Checking flagged rates from Docker volume..."
     docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb "SELECT * FROM main_validation.consensus_check WHERE status = 'FLAGGED'"
 
+# Create analytics bucket in MinIO (if missing)
+init-analytics-bucket:
+    @echo "🪣 Creating analytics-bucket in MinIO..."
+    docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 mb s3://analytics-bucket || echo "Bucket might already exist."
+    @echo "✅ Bucket created."
+
+# Debug S3 Connectivity from DuckDB
+debug-s3-connectivity:
+    @echo "🔍 Testing S3 access from DuckDB..."
+    docker exec -it duckdb-ui duckdb -c "INSTALL httpfs; LOAD httpfs; SET s3_endpoint='minio:9000'; SET s3_use_ssl=false; SET s3_url_style='path'; SET s3_access_key_id='$MINIO_ROOT_USER'; SET s3_secret_access_key='$MINIO_ROOT_PASSWORD'; SELECT * FROM glob('s3://silver-bucket/iceberg/frankfurter_rates/metadata/*.metadata.json');"
+
 # Clean corrupted Iceberg catalog tables (fixes constraint violations)
 clean-iceberg:
     @echo "🧹 Cleaning Iceberg catalog tables..."
@@ -65,9 +81,12 @@ clean-iceberg:
 
 clean-s3:
     @echo "🧹 Cleaning MinIO S3 buckets..."
-    docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=minioadmin -e AWS_SECRET_ACCESS_KEY=minioadmin123 amazon/aws-cli --endpoint-url http://minio:9000 s3 rm s3://silver-bucket/iceberg --recursive || echo "No data to remove!"
-    docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=minioadmin -e AWS_SECRET_ACCESS_KEY=minioadmin123 amazon/aws-cli --endpoint-url http://minio:9000 s3 rm s3://bronze-bucket/ --recursive || echo "No data to remove!"
+    docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 rm s3://silver-bucket/iceberg --recursive || echo "No data to remove!"
+    docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 rm s3://bronze-bucket/ --recursive || echo "No data to remove!"
     @echo "✅ MinIO S3 buckets cleaned. Everything will reinitialize on next run."
+
+stop-makerates:
+    docker ps -q --filter "name=^makerates" | xargs -r docker stop   
 
 # Hard Reset: Stop containers, wipe volumes, delete DB, and restart
 reset:

@@ -3,7 +3,7 @@ makerates:
   outputs:
     dev:
       type: duckdb
-      path: "{{ env_var('DUCKDB_PATH', '/data/analytics.duckdb') }}"  # Persisted to volume by default
+      path: "{{ env_var('DUCKDB_PATH', '/data/analytics.duckdb') }}"  
 
       # DuckDB extensions for Iceberg and S3
       extensions:

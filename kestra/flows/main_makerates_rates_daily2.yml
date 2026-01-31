@@ -267,21 +267,49 @@ tasks:
           - "--mode={{ vars.run_mode }}"
 
   # ===== 3. TRANSFORM (dbt) =====
-  - id: sync
+  - id: git_sync
     type: io.kestra.plugin.git.SyncNamespaceFiles
     url: https://github.com/ManosCoffee/Makerates
     branch: main
     namespace: makerates
     gitDirectory: dbt_project
     
-  - id: dbt_build
+  # - id: fetch_metadata_locations
+  #   type: io.kestra.plugin.scripts.shell.Commands
+  #   containerImage: amazon/aws-cli
+  #   taskRunner:
+  #     type: io.kestra.plugin.scripts.runner.docker.Docker
+  #     networkMode: makerates-network
+  #   env:
+  #     AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
+  #     AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+  #     AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+  #     # AWS CLI uses AWS_ENDPOINT_URL in newer versions, providing both for safety
+  #     AWS_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
+  #     AWS_ENDPOINT_URL_DYNAMODB: "{{ vars.dynamodb_endpoint }}"
+  #   commands:
+  #     # Fetch metadata location using AWS CLI with JMESPath query
+  #     # Output format: ::{"outputs":{"key":"value"}}:: for Kestra to parse
+  #     - |
+  #       LOCATION=$(aws dynamodb get-item \
+  #         --table-name iceberg_metadata \
+  #         --key '{"table_name": {"S": "frankfurter_rates"}}' \
+  #         --query 'Item.metadata_location.S' \
+  #         --output text)
+        
+  #       echo "::{\"outputs\":{\"frankfurter_metadata_location\":\"$LOCATION\"}}::"
+    
+  - id: dbt_validation_and_transform
     type: io.kestra.plugin.dbt.cli.DbtCLI
     containerImage: makerates-ingestion-base:latest
+    allowWarning: true
     namespaceFiles:
       enabled: true
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       networkMode: makerates-network
+      # volumes:
+        # - /Users/manos/dev/makerates/data:/data
     outputFiles:
       - analytics.duckdb
     env:
@@ -297,11 +325,24 @@ tasks:
       PIPELINE_MODE: "{{ vars.run_mode }}"
     commands:
       - dbt deps
-      - dbt build
+      - "dbt build --vars '{\"frankfurter_metadata_location\": \"{{ outputs.fetch_metadata_locations.vars.frankfurter_metadata_location }}\"}'"
       - pwd
       - ls -lah .
       - find . -name "*.duckdb" -o -name "*.db"
+      # - cp analytics.duckdb /data/analytics_copied.duckdb
 
+  - id: upload_ddb_file
+    type: io.kestra.plugin.minio.Upload
+    namespaceFiles:
+      enabled: true
+    region: "{{ envs.dynamodb_aws_default_region }}"
+    endpoint: "{{ envs.minio_endpoint }}"  
+    accessKeyId: "{{ envs.destination__filesystem__credentials__aws_access_key_id }}"
+    secretKeyId: "{{ envs.destination__filesystem__credentials__aws_secret_access_key }}"
+    from: "{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}" #"{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}"
+    bucket: "analytics-bucket"
+    key: "analytics.duckdb"
+         
 
 
   # ===== 4. UPSERT TO DYNAMODB =====
@@ -315,7 +356,7 @@ tasks:
     pullPolicy: NEVER
     networkMode: makerates-network
     inputFiles:
-      analytics.duckdb: "{{ outputs.dbt_build.outputFiles['analytics.duckdb'] }}"
+      analytics.duckdb: "{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}"
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
@@ -324,7 +365,7 @@ tasks:
       DYNAMODB_TABLE_NAME: "{{ vars.dynamodb_currencies_table_name }}"
       DYNAMODB_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
       DYNAMODB_REGION: "{{ vars.ddb_default_region }}"
-      DUCKDB_PATH: "/app/analytics.duckdb" # Reads from Kestra inputFiles
+      DUCKDB_PATH: "analytics.duckdb" # Reads from Kestra inputFiles
       MODE: "{{ vars.run_mode }}"
     workingDir: /app
     commands:
@@ -336,23 +377,6 @@ tasks:
       interval: PT30S
       maxAttempt: 3
 
-  # ===== 5. FINAL INSPECTION (JDBC DuckDB) =====
-  - id: inspect_data
-    type: io.kestra.plugin.jdbc.duckdb.Queries
-    namespaceFiles:
-      enabled: true
-    url: jdbc:duckdb:analytics.duckdb
-    sql: |
-      -- Check final rates
-      SELECT 'mart_latest_rates' as table_name, count(*) as row_count FROM main_analytics.mart_latest_rates;
-      
-      SELECT * FROM main_analytics.mart_latest_rates LIMIT 5;
-
-      -- Check validation status
-      SELECT validation_status, count(*) as count 
-      FROM main_validation.fact_rates_validated 
-      GROUP BY validation_status;
-    fetchType: FETCH
 
 triggers:
   - id: daily_schedule

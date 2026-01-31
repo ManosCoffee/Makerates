@@ -1,7 +1,8 @@
 {{
   config(
-    materialized='table',
+    materialized='incremental',
     unique_key=['rate_date', 'target_currency'],
+    incremental_strategy='merge',
     tags=['validation', 'consensus']
   )
 }}
@@ -11,7 +12,7 @@ Consensus Check: Multi-Source Validation
 Sources: ExchangeRate-API (Primary), Frankfurter (Secondary), CurrencyLayer (Tertiary/Failover)
 
 Logic:
-1. Normalize all rates to EUR base.
+1. Normalize all rates to USD base.
 2. Calculate Median Rate (Consensus).
 3. Flag sources deviating > 0.5% from Median.
 */
@@ -21,63 +22,29 @@ WITH
 frank AS (
     SELECT rate_date, target_currency, exchange_rate as rate, 'frankfurter' as source
     FROM {{ ref('stg_frankfurter') }}
-    WHERE base_currency = 'EUR'
+    WHERE base_currency = 'USD'
 ),
 
--- CurrencyLayer: Handle EUR and USD base
-cl_raw AS (
-    SELECT rate_date, base_currency, target_currency, exchange_rate
-    FROM {{ ref('stg_currencylayer') }}
-),
-
-cl_eur_base AS (
-    SELECT rate_date, target_currency, exchange_rate as rate
-    FROM cl_raw
-    WHERE base_currency = 'EUR'
-),
-
-cl_usd_base_pairs AS (
-    SELECT rate_date, exchange_rate as usd_eur_rate
-    FROM cl_raw
-    WHERE base_currency = 'USD' AND target_currency = 'EUR'
-),
-
+-- CurrencyLayer: Already USD base (free tier limitation)
 cl_normalized AS (
-    SELECT 
-        r.rate_date, 
-        r.target_currency, 
-        r.exchange_rate / u.usd_eur_rate as rate,
+    SELECT
+        rate_date,
+        target_currency,
+        exchange_rate as rate,
         'currencylayer' as source
-    FROM cl_raw r
-    JOIN cl_usd_base_pairs u ON r.rate_date = u.rate_date
-    WHERE r.base_currency = 'USD'
-    
-    UNION ALL
-    
-    SELECT *, 'currencylayer' as source FROM cl_eur_base
+    FROM {{ ref('stg_currencylayer') }}
+    WHERE base_currency = 'USD'
 ),
 
--- ExchangeRate-API is USD based, convert to EUR (Self-contained normalization)
-er_raw AS (
-    SELECT rate_date, base_currency, target_currency, exchange_rate
-    FROM {{ ref('stg_exchangerate') }}
-),
-
-er_usd_eur AS (
-    SELECT rate_date, exchange_rate as usd_to_eur
-    FROM er_raw
-    WHERE base_currency = 'USD' AND target_currency = 'EUR'
-),
-
+-- ExchangeRate-API: Already USD base (no conversion needed)
 er_normalized AS (
-    SELECT 
-        e.rate_date, 
-        e.target_currency, 
-        e.exchange_rate / u.usd_to_eur as rate, 
+    SELECT
+        rate_date,
+        target_currency,
+        exchange_rate as rate,
         'exchangerate' as source
-    FROM er_raw e
-    JOIN er_usd_eur u ON e.rate_date = u.rate_date
-    WHERE e.base_currency = 'USD'
+    FROM {{ ref('stg_exchangerate') }}
+    WHERE base_currency = 'USD'
 ),
 
 -- 2. Union All Sources
@@ -104,7 +71,7 @@ stats AS (
 SELECT
     s.rate_date,
     s.target_currency,
-    concat('EUR/', s.target_currency) as currency_pair,
+    concat('USD/', s.target_currency) as currency_pair,
     s.consensus_rate,
     s.source_count,
     s.source_breakdown,
@@ -146,3 +113,8 @@ WHERE s.consensus_rate IS NOT NULL
       s.rate_date = CAST('{{ env_var("EXECUTION_DATE", "1970-01-01") }}' AS DATE)
       OR '{{ env_var("PIPELINE_MODE", "daily") }}' = 'backfill'
   )
+
+{% if is_incremental() %}
+  -- Only process new/updated dates (with 7-day lookback for late-arriving data)
+  AND s.rate_date >= (SELECT MAX(rate_date) FROM {{ this }}) - INTERVAL '7 days'
+{% endif %}

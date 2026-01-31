@@ -12,6 +12,7 @@ from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
 
 # Configure Logging (Already done in root_logger)
+from utils.dynamodb import DynamoDBClient
 
 class IcebergLoader:
     """
@@ -58,19 +59,8 @@ class IcebergLoader:
         # Load Optional / Defaults
         defaults = job_settings.get('defaults', {})
         for var in job_settings['env_vars']['optional']:
-            # Prio: Env Var > Default > None
             default_val = defaults.get(var)
             config[var] = os.environ.get(var, default_val)
-
-        # Log Debug (masked)
-        logger.info("--- Environment Configuration ---")
-        for k, v in config.items():
-            if "SECRET" in k or "KEY" in k:
-                 logger.info(f"{k}: ******")
-            else:
-                 logger.info(f"{k}: {v}")
-        logger.info("---------------------------------")
-        
         return config
 
     def _setup_duckdb(self) -> DuckDBPyConnection:
@@ -226,7 +216,7 @@ class IcebergLoader:
         WHERE rn = 1
         """
         
-        logger.info(f"Executing DuckDB Query with Deduplication on keys: {self.pk_list}...")
+        logger.info(f"Executing DuckDB Query with Deduplication on keys: {self.pk_list} based on extraction_timestamp")
         arrow_result = self.con.sql(final_query).arrow()
         
         if isinstance(arrow_result, pa.RecordBatchReader):
@@ -305,6 +295,29 @@ class IcebergLoader:
             logger.info("\nUpsert operation completed")
             logger.info(f"Rows Updated: {upsert_result.rows_updated}")
             logger.info(f"Rows Inserted: {upsert_result.rows_inserted}")
+            
+            # --- DYNAMODB STATE UPDATE ---
+            try:
+                table.refresh()
+                latest_metadata_location = table.metadata_location
+                logger.info(f"Latest Metadata Location: {latest_metadata_location}")
+                
+                # Initialize DynamoDBClient wrapper
+                ddb = DynamoDBClient(
+                    table_name="iceberg_metadata",
+                    endpoint_url=self.env_config.get("DYNAMODB_ENDPOINT"),
+                    region_name=self.env_config.get("AWS_REGION", "us-east-1")
+                )
+                
+                ddb.put_item({
+                    "table_name": table_name,
+                    "metadata_location": latest_metadata_location,
+                    "updated_at": datetime.now().isoformat()
+                })
+                logger.info(f"✅ Updated DynamoDB state for {table_name}")
+
+            except Exception as e:
+                logger.warning(f"Failed to update DynamoDB state (continuing): {e}")
             
         except Exception as e:
             logger.error(f"Iceberg operation failed: {e}")

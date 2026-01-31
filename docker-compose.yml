@@ -108,8 +108,9 @@ services:
       - kestra-data:/app/storage
       - ./kestra/flows:/app/flows
       - ./dbt_project:/app/dbt_project
+      - ./data:/data
       # - ./data/duckdb:/duckdb
-      - makerates-dbt-data:/data # Mount shared DBT volume to ensure it is created
+      # - makerates-dbt-data:/data # Mount shared DBT volume to ensure it is created
     environment:
       KESTRA_CONFIGURATION: |
         datasources:
@@ -215,6 +216,22 @@ services:
     networks:
       - makerates-network
     restart: unless-stopped
+  duckdb-ui:
+    build:
+      context: ./duckdb_ui_service
+      dockerfile: Dockerfile.minioduck
+    container_name: duckdb-ui
+    depends_on:
+      - minio
+    ports:
+      - "4213:4213"
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      AWS_REGION: "us-east-1"
+    volumes:
+      - duckdb_db:/db
 
 volumes:
   minio-data:
@@ -227,6 +244,8 @@ volumes:
     name: makerates-kestra-db-data
   makerates-dbt-data:
     name: makerates-dbt-data
+  duckdb_db:
+    name: makerates-duckdb
 
 networks:
   makerates-network:
