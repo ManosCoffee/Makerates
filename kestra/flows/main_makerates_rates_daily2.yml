@@ -73,9 +73,9 @@ tasks:
     networkMode: makerates-network
     env:
       DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
-      AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
-      AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
-      AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+      DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+      DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+      DYNAMODB_AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
     commands:
       - quotas_endpoint
 
@@ -191,10 +191,16 @@ tasks:
         pullPolicy: NEVER
         networkMode: makerates-network
         env:
+          # AWS creds fro MinIO S3 (ICEBERG)
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
           AWS_REGION: "{{ vars.ddb_default_region }}"
           AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+          # AWS creds for DynamoDB (ICEBERG)
+          DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+          DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+          DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+          # BUCKETS & ICEBERG CONFIGS
           SOURCE_BUCKET: "{{ vars.source_bucket }}"
           SOURCE_PREFIX: "{{ vars.frankfurter_source_prefix }}"
           TARGET_BUCKET: "{{ vars.target_bucket }}"
@@ -219,10 +225,16 @@ tasks:
         networkMode: makerates-network
         runIf: '{{ outputs.check_quotas.vars.exchangerate }}'
         env:
+          # AWS creds fro MinIO S3 (ICEBERG)
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
           AWS_REGION: "{{ vars.ddb_default_region }}"
           AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+          # AWS creds for DynamoDB (ICEBERG)
+          DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+          DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+          DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+          # BUCKETS & ICEBERG CONFIGS
           SOURCE_BUCKET: "{{ vars.source_bucket }}"
           SOURCE_PREFIX: "{{ vars.exchangerate_source_prefix }}"
           TARGET_BUCKET: "{{ vars.pyiceberg_catalog_default_warehouse }}"
@@ -247,10 +259,16 @@ tasks:
         networkMode: makerates-network
         runIf: '{{ inputs.include_currencylayer or (not outputs.check_quotas.vars.exchangerate) }}'
         env:
+          # AWS creds fro MinIO S3 (ICEBERG)
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
           AWS_REGION: "{{ vars.ddb_default_region }}"
           AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+          # AWS creds for DynamoDB (ICEBERG)
+          DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+          DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+          DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+          # BUCKETS & ICEBERG CONFIGS
           SOURCE_BUCKET: "{{ vars.source_bucket }}"
           SOURCE_PREFIX: "{{ vars.currencylayer_source_prefix }}"
           TARGET_BUCKET: "{{ vars.pyiceberg_catalog_default_warehouse }}"
@@ -268,41 +286,61 @@ tasks:
 
   # ===== 2c. FETCH METADATA LOCATIONS FROM DYNAMODB =====
   - id: fetch_iceberg_metadata_paths
-    type: io.kestra.plugin.scripts.shell.Commands
-    containerImage: amazon/aws-cli
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: python:3.12-slim
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       networkMode: makerates-network
     dependsOn:
       - create_iceberg_sources
+    beforeCommands:
+      - pip install boto3 kestra
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
       AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
-      AWS_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
-    commands:
-      - |
-        # Fetch metadata for each Iceberg table from DynamoDB
-        FRANK_META=$(aws dynamodb get-item \
-          --table-name iceberg_metadata \
-          --key '{"table_name": {"S": "frankfurter_rates"}}' \
-          --query 'Item.metadata_location.S' \
-          --output text 2>/dev/null || echo "")
+      DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+    script: |
+      import boto3
+      import os
+      from kestra import Kestra
 
-        EXCH_META=$(aws dynamodb get-item \
-          --table-name iceberg_metadata \
-          --key '{"table_name": {"S": "exchangerate_rates"}}' \
-          --query 'Item.metadata_location.S' \
-          --output text 2>/dev/null || echo "")
+      # Initialize DynamoDB client
+      ddb = boto3.client(
+          'dynamodb',
+          endpoint_url=os.environ['DYNAMODB_ENDPOINT'],
+          region_name=os.environ['AWS_DEFAULT_REGION'],
+          aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+          aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY']
+      )
 
-        CURR_META=$(aws dynamodb get-item \
-          --table-name iceberg_metadata \
-          --key '{"table_name": {"S": "currencylayer_rates"}}' \
-          --query 'Item.metadata_location.S' \
-          --output text 2>/dev/null || echo "")
+      # Fetch metadata for each table
+      tables = {
+          'frankfurter_rates': 'frankfurter_metadata',
+          'exchangerate_rates': 'exchangerate_metadata',
+          'currencylayer_rates': 'currencylayer_metadata'
+      }
 
-        # Output in Kestra format
-        echo "::{"outputs":{"frankfurter_metadata":"$FRANK_META","exchangerate_metadata":"$EXCH_META","currencylayer_metadata":"$CURR_META"}}::"
+      outputs = {}
+      for table_name, output_key in tables.items():
+          try:
+              response = ddb.get_item(
+                  TableName='iceberg_metadata',
+                  Key={'table_name': {'S': table_name}}
+              )
+              if 'Item' in response and 'metadata_location' in response['Item']:
+                  metadata_location = response['Item']['metadata_location']['S']
+                  outputs[output_key] = metadata_location
+                  print(f"✅ {table_name}: {metadata_location}")
+              else:
+                  outputs[output_key] = ""
+                  print(f"⚠️  {table_name}: No metadata found")
+          except Exception as e:
+              outputs[output_key] = ""
+              print(f"❌ {table_name}: Error - {e}")
+
+      # Output using Kestra SDK 
+      Kestra.outputs(outputs)
 
   # ===== 3. TRANSFORM (dbt) =====
   - id: git_sync
@@ -312,41 +350,18 @@ tasks:
     namespace: makerates
     gitDirectory: dbt_project
     
-  # - id: fetch_metadata_locations
-  #   type: io.kestra.plugin.scripts.shell.Commands
-  #   containerImage: amazon/aws-cli
-  #   taskRunner:
-  #     type: io.kestra.plugin.scripts.runner.docker.Docker
-  #     networkMode: makerates-network
-  #   env:
-  #     AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
-  #     AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
-  #     AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
-  #     # AWS CLI uses AWS_ENDPOINT_URL in newer versions, providing both for safety
-  #     AWS_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
-  #     AWS_ENDPOINT_URL_DYNAMODB: "{{ vars.dynamodb_endpoint }}"
-  #   commands:
-  #     # Fetch metadata location using AWS CLI with JMESPath query
-  #     # Output format: ::{"outputs":{"key":"value"}}:: for Kestra to parse
-  #     - |
-  #       LOCATION=$(aws dynamodb get-item \
-  #         --table-name iceberg_metadata \
-  #         --key '{"table_name": {"S": "frankfurter_rates"}}' \
-  #         --query 'Item.metadata_location.S' \
-  #         --output text)
-        
-  #       echo "::{\"outputs\":{\"frankfurter_metadata_location\":\"$LOCATION\"}}::"
-    
   - id: dbt_validation_and_transform
     type: io.kestra.plugin.dbt.cli.DbtCLI
     containerImage: makerates-ingestion-base:latest
     allowWarning: true
+    dependsOn:
+      - fetch_iceberg_metadata_paths
     namespaceFiles:
       enabled: true
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       networkMode: makerates-network
-      # volumes:
+      # volumes
         # - /Users/manos/dev/makerates/data:/data
     outputFiles:
       - analytics.duckdb
@@ -363,18 +378,21 @@ tasks:
       DBT_ICEBERG_BASE_PATH: "{{ vars.dbt_iceberg_base_path }}"
       EXECUTION_DATE: "{{ inputs.execution_date }}"
       PIPELINE_MODE: "{{ vars.run_mode }}"
-      # Iceberg metadata locations from DynamoDB
-      FRANKFURTER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.frankfurter_metadata }}"
-      EXCHANGERATE_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.exchangerate_metadata }}"
-      CURRENCYLAYER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.currencylayer_metadata }}"
+      # Iceberg metadata locations from DynamoDB (keeping as fallback)
+      FRANKFURTER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.frankfurter_metadata | default('') }}"
+      EXCHANGERATE_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.exchangerate_metadata | default('') }}"
+      CURRENCYLAYER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.currencylayer_metadata | default('') }}"
     commands:
       - dbt deps
-      - dbt build 
+      - |
+        dbt build --vars '{
+          "frankfurter_metadata_location": "{{ outputs.fetch_iceberg_metadata_paths.outputs.frankfurter_metadata | default('') }}",
+          "exchangerate_metadata_location": "{{ outputs.fetch_iceberg_metadata_paths.outputs.exchangerate_metadata | default('') }}",
+          "currencylayer_metadata_location": "{{ outputs.fetch_iceberg_metadata_paths.outputs.currencylayer_metadata | default('') }}"
+        }'
       - pwd
       - ls -lah .
       - find . -name "*.duckdb" -o -name "*.db"
-      # - cp analytics.duckdb /data/analytics_copied.duckdb
-      ##--vars '{\"frankfurter_metadata_location\": \"{{ outputs.fetch_metadata_locations.vars.frankfurter_metadata_location }}\"}'"
 
   - id: upload_ddb_file
     type: io.kestra.plugin.minio.Upload

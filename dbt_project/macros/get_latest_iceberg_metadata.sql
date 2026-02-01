@@ -28,29 +28,40 @@
        Finds the latest metadata JSON file for an Iceberg table.
 
        Strategy (in priority order):
-       1. Check environment variable (passed from Kestra via DynamoDB lookup)
-       2. Fallback to glob() for S3 metadata discovery (existing logic)
-       3. Return none if neither works (graceful degradation)
+       1. Check dbt variable (passed via --vars from Kestra)
+       2. Check environment variable (passed via env from Kestra)
+       3. Fallback to glob() for S3 metadata discovery (existing logic)
+       4. Return none if nothing works (graceful degradation)
 
        Args:
          table_path: S3 path to Iceberg table root (for fallback glob)
-         table_name: Table name for env var lookup (e.g., "frankfurter_rates")
+         table_name: Table name for var lookup (e.g., "frankfurter_rates")
     #}
 
-    {# Build environment variable name from table_name #}
-    {# frankfurter_rates → FRANKFURTER_METADATA_LOCATION #}
+    {# Build variable name from table_name #}
+    {# frankfurter_rates → frankfurter_metadata_location #}
+    {% set var_name = table_name | replace('_rates', '_metadata_location') %}
     {% set env_var_name = table_name | upper | replace('_RATES', '') ~ '_METADATA_LOCATION' %}
 
-    {# Try to get metadata from environment variable first #}
+    {# Try to get metadata from dbt variable first (--vars) #}
+    {% set metadata_from_var = var(var_name, '') %}
+
+    {% if metadata_from_var != '' %}
+        {# Success! Metadata passed via dbt --vars #}
+        {{ log("✅ Using metadata from dbt var '" ~ var_name ~ "': " ~ metadata_from_var, info=True) }}
+        {{ return(metadata_from_var) }}
+    {% endif %}
+
+    {# Try environment variable second #}
     {% set metadata_from_env = env_var(env_var_name, '') %}
 
     {% if metadata_from_env != '' %}
-        {# Success! Metadata passed via Kestra #}
+        {# Success! Metadata passed via environment #}
         {{ log("✅ Using metadata from environment: " ~ metadata_from_env, info=True) }}
         {{ return(metadata_from_env) }}
     {% else %}
         {# Fallback to glob() method (existing logic) #}
-        {{ log("⚠️  Environment variable " ~ env_var_name ~ " not set, falling back to glob()", info=True) }}
+        {{ log("⚠️  Variable '" ~ var_name ~ "' and env var '" ~ env_var_name ~ "' not set, falling back to glob()", info=True) }}
 
         {% set query %}
             SELECT file

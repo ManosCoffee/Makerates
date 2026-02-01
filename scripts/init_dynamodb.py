@@ -2,8 +2,9 @@
 """
 DynamoDB Table Initialization Script
 Creates all required tables for MakeRates:
-1. currency_rates (Hot Data, Validated Rates)
-2. api_quota_tracker (API Usage & Limits)
+1. iceberg_metadata (Iceberg Table Metadata Locations)
+2. currency_rates (Hot Data, Validated Rates)
+3. api_quota_tracker (API Usage & Limits)
 
 Usage:
     python scripts/init_dynamodb.py --endpoint http://localhost:8000
@@ -17,6 +18,18 @@ from botocore.exceptions import ClientError
 def get_table_definitions():
     """Returns the schema definitions for all tables."""
     return {
+        "iceberg_metadata": {
+            "KeySchema": [
+                {"AttributeName": "table_name", "KeyType": "HASH"},  # Partition key
+            ],
+            "AttributeDefinitions": [
+                {"AttributeName": "table_name", "AttributeType": "S"},
+            ],
+            "Tags": [
+                {"Key": "Project", "Value": "MakeRates"},
+                {"Key": "Purpose", "Value": "IcebergMetadataTracking"},
+            ]
+        },
         "currency_rates": {
             "KeySchema": [
                 {"AttributeName": "currency_pair", "KeyType": "HASH"},  # Partition key
