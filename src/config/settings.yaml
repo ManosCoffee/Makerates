@@ -22,16 +22,28 @@ iceberg_job:
 sync_job:
   env_vars:
     required:
-      - AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY
       - DYNAMODB_TABLE_NAME
     optional:
-      - AWS_ENDPOINT_URL
-      - AWS_REGION
-      - DYNAMODB_ENDPOINT_URL
-      - DYNAMODB_REGION
       - DUCKDB_PATH
   defaults:
-    AWS_REGION: "us-east-1"
-    DYNAMODB_TABLE_NAME: "currency_rates"
+    # References centralized table name from dynamodb_tables section
+    DYNAMODB_TABLE_NAME: "currency_rates"  # See dynamodb_tables for actual value
     DUCKDB_PATH: "analytics.duckdb"
+
+dynamodb_client:
+  env_vars:
+    required:
+      - DYNAMODB_AWS_ACCESS_KEY_ID
+      - DYNAMODB_AWS_SECRET_ACCESS_KEY
+    optional: # Allowing optional args to override defaults
+      - DYNAMODB_ENDPOINT
+      - DYNAMODB_AWS_DEFAULT_REGION
+  defaults:
+    DYNAMODB_ENDPOINT: "http://dynamodb:8000"
+    DYNAMODB_AWS_DEFAULT_REGION: "us-east-1"
+
+# DynamoDB Table Names (centralized configuration)
+dynamodb_tables:
+  iceberg_metadata: "iceberg_metadata"
+  currency_rates: "currency_rates"
+  api_quota_tracker: "api_quota_tracker"

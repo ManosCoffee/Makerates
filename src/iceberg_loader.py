@@ -24,20 +24,23 @@ class IcebergLoader:
         self.mode = mode
         self.start_date = start_date
         self.end_date = end_date
-        
+
         # 1. Load Configurations
         self.settings = load_config("settings.yaml")
         self.storage_config = load_config("storage.yaml")
-        
+
         # 2. Parse & Validate Environment Variables
         self.env_config = self._load_environment_variables()
-        
+
         # 3. Setup Connections
         self.con = self._setup_duckdb()
         self.s3_client = get_s3_client() # Helper uses boto3 directly, but we might keep it accessible
 
         # 4. Primary Keys List
         self.pk_list = [k.strip() for k in self.env_config["PRIMARY_KEYS"].split(",")]
+
+        # 5. DynamoDB Table Names from settings
+        self.dynamodb_tables = self.settings.get("dynamodb_tables", {})
 
     def _load_environment_variables(self) -> Dict[str, str]:
         """Loads and validates environment variables based on settings.yaml."""
@@ -312,18 +315,14 @@ class IcebergLoader:
                 logger.info(f"Latest Metadata Location: {latest_metadata_location}")
                 
                 # Initialize DynamoDBClient wrapper
-                ddb = DynamoDBClient(
-                    table_name="iceberg_metadata",
-                    endpoint_url=self.env_config.get("DYNAMODB_ENDPOINT"),
-                    region_name=self.env_config.get("AWS_REGION", "us-east-1")
-                )
-                
+                metadata_table = self.dynamodb_tables.get("iceberg_metadata", "iceberg_metadata")
+                ddb = DynamoDBClient(table_name=metadata_table)
                 ddb.put_item({
                     "table_name": table_name,
                     "metadata_location": latest_metadata_location,
                     "updated_at": datetime.now().isoformat()
                 })
-                logger.info(f"✅ Updated DynamoDB state for {table_name}")
+                logger.info(f"✅ Updated DynamoDB state for {table_name} in table {metadata_table}")
 
             except Exception as e:
                 logger.warning(f"Failed to update DynamoDB state (continuing): {e}")

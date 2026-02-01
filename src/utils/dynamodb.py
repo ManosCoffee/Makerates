@@ -2,27 +2,40 @@ import boto3
 from botocore.exceptions import ClientError
 from typing import Optional, Dict, Any, Tuple, List
 from utils.logging_config import root_logger as logger
-import os
+from utils.helpers import parse_env_vars_config, load_config
+import os,sys
+
+# ENV VARS CONFIG FILE
+CONFIG_FILE = "settings.yaml"
 
 class DynamoDBClient:
     """Simple wrapper around boto3 DynamoDB Table operations."""
 
-    def __init__(self, table_name: str, endpoint_url: Optional[str] = None, region_name: str = "us-east-1"):
-        
-        dynamodb_kwargs = {"region_name": region_name}
-        if endpoint_url:
-            dynamodb_kwargs["endpoint_url"] = endpoint_url
-            dynamodb_kwargs['aws_access_key_id'],dynamodb_kwargs['aws_secret_access_key'] = self._grab_ddb_aws_secrets()
-            logger.info(f"DDB PARSED AWS CREDS: {dynamodb_kwargs['aws_access_key_id']},{dynamodb_kwargs['aws_secret_access_key']}")
-        self.table = boto3.resource("dynamodb", **dynamodb_kwargs).Table(table_name)
-        logger.debug(f"DynamoDB table initialized: {table_name}")
+    def __init__(self, table_name: str, endpoint_url: Optional[str] = None, region_name: Optional[str] = "us-east-1"):
+
+        self._load_environment_config()
+        dynamodb_kwargs = {}
+        try:
+            dynamodb_kwargs["endpoint_url"] = endpoint_url if endpoint_url else self.config.get("DYNAMODB_ENDPOINT",None)
+            dynamodb_kwargs["region_name"] = region_name if region_name else self.config.get("DYNAMODB_AWS_DEFAULT_REGION",None)                
+            dynamodb_kwargs["aws_access_key_id"] = self.config.get("DYNAMODB_AWS_ACCESS_KEY_ID",None)
+            dynamodb_kwargs["aws_secret_access_key"] = self.config.get("DYNAMODB_AWS_SECRET_ACCESS_KEY",None)
+            self.table = boto3.resource("dynamodb", **dynamodb_kwargs).Table(table_name)
+            logger.info(f"DynamoDB table initialized: {table_name}")
+        except Exception as e:
+            logger.error(f"Failed to initialize DynamoDB table: {e}")
+            sys.exit(1)
+
     
-    def _grab_ddb_aws_secrets(self)-> Tuple[str,str]:
-        # with failover rollback to generic credentials
-        return (
-            os.getenv("DYNAMODB_AWS_ACCESS_KEY_ID",None) or os.getenv("AWS_ACCESS_KEY_ID",None),
-            os.getenv("DYNAMODB_AWS_SECRET_ACCESS_KEY",None) or os.getenv("AWS_SECRET_ACCESS_KEY",None)
-        )
+    def _load_environment_config(self)->None:
+        try:
+            settings = load_config(CONFIG_FILE)
+            job_config = settings.get("dynamodb_client", {})
+            self.config = parse_env_vars_config(job_config)
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {e}")
+            sys.exit(1)
+
 
     def get_item(self, key: Dict[str, Any]) -> Optional[Dict]:
         try:

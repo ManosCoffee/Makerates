@@ -9,7 +9,12 @@ CONFIG_FILE = "apis.yaml"
 class QuotaManager:
     """Manages API quotas with automatic failover."""
 
-    def __init__(self, table_name: str = "api_quota_tracker", endpoint_url: Optional[str] = None):
+    def __init__(self, table_name: Optional[str] = None, endpoint_url: Optional[str] = None):
+        # Load table name from settings if not provided
+        if table_name is None:
+            settings = load_config("settings.yaml")
+            table_name = settings.get("dynamodb_tables", {}).get("api_quota_tracker", None)
+
         self.dynamodb = DynamoDBClient(table_name, endpoint_url)
         self.apis_config = load_config(CONFIG_FILE)
         self.api_priority = sorted(

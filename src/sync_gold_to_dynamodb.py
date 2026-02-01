@@ -15,45 +15,20 @@ from typing import Dict, Any
 from pathlib import Path
 from utils.helpers import load_config
 from utils.dynamodb import DynamoDBClient
+from utils.helpers import parse_env_vars_config
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+# ENV VARS FOR JOB CONFIG 
+JOB_CONFIG_FILE = "settings.yaml"
 
-def parse_config(job_config: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Parse environment variables based on settings.yaml config.
-    Applies defaults and checks for required variables.
-    """
-    env_vars = job_config.get('env_vars', {})
-    required = env_vars.get('required', [])
-    optional = env_vars.get('optional', [])
-    defaults = job_config.get('defaults', {})
-    
-    parsed_config = {}
-    
-    # Process all potential keys
-    all_keys = set(required + optional)
-    
-    for key in all_keys:
-        # Get from env, then default, then None
-        val = os.getenv(key, defaults.get(key))
-        
-        parsed_config[key] = val
-    
-    # Check required
-    missing = [key for key in required if not parsed_config.get(key)]
-    if missing:
-        logger.error(f"Missing required environment variables: {', '.join(missing)}")
-        sys.exit(1)
-        
-    return parsed_config
 
 def sync_rates_to_dynamodb():
     try:
-        settings = load_config("settings.yaml")
+        settings = load_config(JOB_CONFIG_FILE)
         job_config = settings.get("sync_job", {})
-        config = parse_config(job_config)
+        config = parse_env_vars_config(job_config)
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         sys.exit(1)
@@ -61,42 +36,16 @@ def sync_rates_to_dynamodb():
     # Extract config variables
     raw_duckdb_path = os.getenv("DUCKDB_PATH", "analytics.duckdb")
     table_name = config["DYNAMODB_TABLE_NAME"]
-    endpoint_url = config.get("DYNAMODB_ENDPOINT_URL") or config.get("AWS_ENDPOINT_URL")
-    region = config.get("DYNAMODB_REGION") or config.get("AWS_REGION")
-
-    # --- PATH DEBUGGING ---
-    cwd = Path.cwd()
-    logger.info(f"Current Working Directory: {cwd}")
-    logger.info("Listing files in current directory:")
-    try:
-        for f in cwd.iterdir():
-            logger.info(f" - {f.name} ({'DIR' if f.is_dir() else 'FILE'})")
-    except Exception as e:
-        logger.error(f"Failed to list directory: {e}")
-    
-    logger.info("Listing files in /data:")
-    try:
-        data_path = Path("/data")
-        if data_path.exists():
-            for f in data_path.iterdir():
-                logger.info(f" - {f.name} ({'DIR' if f.is_dir() else 'FILE'})")
-        else:
-            logger.info("/data directory does not exist.")
-    except Exception as e:
-        logger.error(f"Failed to list /data: {e}")
-    # -----------------------
-
-    logger.debug(f"\n @! DEBUG RAW DUCKDB PATH: {raw_duckdb_path} \n")
     
     duckdb_path = Path(raw_duckdb_path)
     
     # Verify DuckDB path
     if not duckdb_path.exists():
         # Fallback 1: Check in current directory strictly
-        local_fallback = cwd / "analytics.duckdb"
+        local_fallback = Path("data/analytics.duckdb")
         
         # Fallback 2: Check in dbt_project/
-        project_fallback = cwd / "dbt_project" / "analytics.duckdb"
+        project_fallback = Path("dbt_project/analytics.duckdb")
 
         if local_fallback.exists():
              logger.info(f"Found database at local fallback: {local_fallback}")
