@@ -15,7 +15,8 @@ Source: ExchangeRate-API (free tier)
 Primary Source for USD-based exchange rates
 */
 
-{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("exchangerate_rates"), "exchangerate_rates") %}
+{% set table_path = get_iceberg_table_path("exchangerate_rates") %}
+{% set metadata_path = get_latest_iceberg_metadata(table_path, "exchangerate_rates") %}
 
 {% if metadata_path is none %}
     -- Table doesn't exist yet, return empty result with correct schema
@@ -36,8 +37,9 @@ Primary Source for USD-based exchange rates
 
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table
+    -- Use table root path, not metadata.json path
     SELECT *
-    FROM iceberg_scan('{{ metadata_path }}', allow_moved_paths=true)
+    FROM iceberg_scan('{{ table_path }}', allow_moved_paths=true)
     WHERE source = 'exchangerate'
 ),
 

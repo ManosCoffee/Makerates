@@ -8,7 +8,8 @@
 -- CurrencyLayer Staging
 -- Base Currency is typically USD (Free Tier) or EUR (Paid)
 
-{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("currencylayer_rates"), "currencylayer_rates") %}
+{% set table_path = get_iceberg_table_path("currencylayer_rates") %}
+{% set metadata_path = get_latest_iceberg_metadata(table_path, "currencylayer_rates") %}
 
 {% if metadata_path is none %}
     -- Table doesn't exist yet, return empty result with correct schema
@@ -29,8 +30,9 @@
 
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table
+    -- Use table root path, not metadata.json path
     SELECT *
-    FROM iceberg_scan('{{ metadata_path }}', allow_moved_paths=true)
+    FROM iceberg_scan('{{ table_path }}', allow_moved_paths=true)
     WHERE source = 'currencylayer'
 ),
 
