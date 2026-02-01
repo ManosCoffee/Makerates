@@ -84,9 +84,15 @@ SELECT
     
     -- deviations
     ABS(f.rate - s.consensus_rate) / s.consensus_rate as frank_dev,
-    ABS(f.rate - s.consensus_rate) / s.consensus_rate as variance_pct, -- Alias for downstream consumption
     ABS(er.rate - s.consensus_rate) / s.consensus_rate as er_dev,
     ABS(cl.rate - s.consensus_rate) / s.consensus_rate as cl_dev,
+
+    -- variance_pct = maximum deviation across all sources (for flagging)
+    GREATEST(
+        COALESCE(ABS(f.rate - s.consensus_rate) / s.consensus_rate, 0.0),
+        COALESCE(ABS(er.rate - s.consensus_rate) / s.consensus_rate, 0.0),
+        COALESCE(ABS(cl.rate - s.consensus_rate) / s.consensus_rate, 0.0)
+    ) as variance_pct,
     
     CASE 
         WHEN ABS(f.rate - s.consensus_rate) / s.consensus_rate > 0.005 THEN 'FLAGGED'
@@ -109,6 +115,12 @@ LEFT JOIN frank f ON s.rate_date = f.rate_date AND s.target_currency = f.target_
 LEFT JOIN er_normalized er ON s.rate_date = er.rate_date AND s.target_currency = er.target_currency
 LEFT JOIN cl_normalized cl ON s.rate_date = cl.rate_date AND s.target_currency = cl.target_currency
 WHERE s.consensus_rate IS NOT NULL
+  -- Only include FLAGGED rows (anomalies)
+  AND (
+      ABS(f.rate - s.consensus_rate) / s.consensus_rate > 0.005
+      OR ABS(er.rate - s.consensus_rate) / s.consensus_rate > 0.005
+      OR ABS(cl.rate - s.consensus_rate) / s.consensus_rate > 0.005
+  )
   AND (
       s.rate_date = CAST('{{ env_var("EXECUTION_DATE", "1970-01-01") }}' AS DATE)
       OR '{{ env_var("PIPELINE_MODE", "daily") }}' = 'backfill'
