@@ -43,7 +43,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['EUR']  # Frankfurter uses EUR base
+                values: ['USD']  # Frankfurter uses EUR base
 
       - name: target_currency
         description: Target currency code (ISO 4217)
