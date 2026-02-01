@@ -37,7 +37,7 @@ Secondary Source for EUR-based exchange rates
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table (Compacted & Deduplicated)
     SELECT *
-    FROM iceberg_scan('{{ metadata_path }}')
+    FROM iceberg_scan('{{ metadata_path }}', allow_moved_paths=true)
     WHERE source = 'frankfurter'
 ),
 

@@ -384,12 +384,7 @@ tasks:
       CURRENCYLAYER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.currencylayer_metadata | default('') }}"
     commands:
       - dbt deps
-      - |
-        dbt build --vars '{
-          "frankfurter_metadata_location": "{{ outputs.fetch_iceberg_metadata_paths.outputs.frankfurter_metadata | default('') }}",
-          "exchangerate_metadata_location": "{{ outputs.fetch_iceberg_metadata_paths.outputs.exchangerate_metadata | default('') }}",
-          "currencylayer_metadata_location": "{{ outputs.fetch_iceberg_metadata_paths.outputs.currencylayer_metadata | default('') }}"
-        }'
+      - dbt build
       - pwd
       - ls -lah .
       - find . -name "*.duckdb" -o -name "*.db"

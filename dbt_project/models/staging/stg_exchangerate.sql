@@ -37,7 +37,7 @@ Primary Source for USD-based exchange rates
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table
     SELECT *
-    FROM iceberg_scan('{{ metadata_path }}')
+    FROM iceberg_scan('{{ metadata_path }}', allow_moved_paths=true)
     WHERE source = 'exchangerate'
 ),
 

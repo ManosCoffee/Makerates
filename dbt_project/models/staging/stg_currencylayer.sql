@@ -30,7 +30,7 @@
 WITH bronze_data AS (
     -- Read from Raw Iceberg Table
     SELECT *
-    FROM iceberg_scan('{{ metadata_path }}')
+    FROM iceberg_scan('{{ metadata_path }}', allow_moved_paths=true)
     WHERE source = 'currencylayer'
 ),
 
