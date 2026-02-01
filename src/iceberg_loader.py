@@ -197,10 +197,19 @@ class IcebergLoader:
         # Read PKs from Env Config (List)
         pk_cols_sql = ", ".join(self.pk_list)
         
-        filter_clause = f"""
-            WHERE CAST(rate_date AS DATE) >= CAST('{self.start_date}' AS DATE)
-              AND CAST(rate_date AS DATE) <= CAST('{self.end_date}' AS DATE)
-        """
+        # For daily mode: Accept latest data (7-day lookback for weekends/holidays)
+        # For backfill mode: Use strict date range
+        if self.mode == "daily":
+            # Daily: Accept data from past 7 days (handles weekends/holidays when APIs return latest available)
+            filter_clause = f"""
+                WHERE CAST(rate_date AS DATE) >= CAST('{self.start_date}' AS DATE) - INTERVAL '7 days'
+            """
+        else:
+            # Backfill: strict date range
+            filter_clause = f"""
+                WHERE CAST(rate_date AS DATE) >= CAST('{self.start_date}' AS DATE)
+                  AND CAST(rate_date AS DATE) <= CAST('{self.end_date}' AS DATE)
+            """
         
         final_query = f"""
         SELECT * EXCLUDE (filename, rn)

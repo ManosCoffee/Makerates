@@ -15,7 +15,7 @@ Source: Public Frankfurter API (ECB data)
 Secondary Source for EUR-based exchange rates
 */
 
-{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("frankfurter_rates")) %}
+{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("frankfurter_rates"), "frankfurter_rates") %}
 
 {% if metadata_path is none %}
     -- Table doesn't exist yet, return empty result with correct schema

@@ -17,6 +17,7 @@ import os
 from datetime import datetime
 from typing import Dict, Any
 from utils.quota_manager import QuotaManager
+from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
 
 
@@ -34,12 +35,19 @@ def exchangerate_source(api_key: str = None, use_v6: bool = False):
     # Get API key from parameter or environment
     api_key = api_key or os.getenv("EXCHANGERATE_API_KEY")
 
+    config = load_config("apis.yaml")
+
     # Determine which API version to use
     if use_v6 and api_key:
-        base_url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/USD"
+        base_url = config['exchangerate']['base_url_v6']
+        endpoint_template = config['exchangerate']['endpoints']['latest_v6']
+        endpoint = endpoint_template.format(api_key=api_key, base_currency='USD')
+        url = f"{base_url}{endpoint}"
     else:
         # Use free v4 API (no key required)
-        base_url = "https://api.exchangerate-api.com/v4/latest/USD"
+        base_url = config['exchangerate']['base_url_v4']
+        endpoint = config['exchangerate']['endpoints']['latest_v4'].format(base_currency='USD')
+        url = f"{base_url}{endpoint}"
 
     @dlt.resource(
         name="rates",
@@ -60,7 +68,7 @@ def exchangerate_source(api_key: str = None, use_v6: bool = False):
         """
 
         try:
-            response = requests.get(base_url, timeout=10)
+            response = requests.get(url, timeout=10)
 
             # CRITICAL: Detect quota exhaustion BEFORE raising
             if response.status_code == 429:

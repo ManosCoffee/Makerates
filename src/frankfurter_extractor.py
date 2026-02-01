@@ -14,6 +14,7 @@ import os
 from datetime import datetime
 from typing import Dict, Any
 from utils.quota_manager import QuotaManager
+from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
 
 
@@ -41,8 +42,11 @@ def frankfurter_source():
         - api_response_raw: Complete API response for audit trail
         """
 
-        # Fetch from public Frankfurter API (no need to self-host)
-        url = "https://api.frankfurter.app/latest?from=USD"
+        # Fetch from public Frankfurter API
+        config = load_config("apis.yaml")
+        base_url = config['frankfurter']['base_url']
+        template = config['frankfurter']['endpoints']['latest']
+        url = f"{base_url}{template.format(from_currency='USD')}"
 
         try:
             response = requests.get(url, timeout=10)
@@ -104,7 +108,15 @@ def frankfurter_range_source(start_date: str, end_date: str):
         Data in control line-by-line with dlt! :)
         """
         # Frankfurter Time Series Endpoint
-        url = f"https://api.frankfurter.app/{start_date}..{end_date}?from=USD"
+        # Frankfurter Time Series Endpoint
+        config = load_config("apis.yaml")
+        base_url = config['frankfurter']['base_url']
+        # Endpoint template: /{start_date}..{end_date}
+        endpoint_template = config['frankfurter']['endpoints']['historical']
+        # Replace placeholders
+        endpoint = endpoint_template.replace("{start_date}", start_date).replace("{end_date}", end_date)
+        
+        url = f"{base_url}{endpoint}?from=USD"
         
         try:
             response = requests.get(url, timeout=30) # Longer timeout for range

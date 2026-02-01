@@ -15,7 +15,7 @@ Source: ExchangeRate-API (free tier)
 Primary Source for USD-based exchange rates
 */
 
-{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("exchangerate_rates")) %}
+{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("exchangerate_rates"), "exchangerate_rates") %}
 
 {% if metadata_path is none %}
     -- Table doesn't exist yet, return empty result with correct schema

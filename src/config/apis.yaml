@@ -1,14 +1,28 @@
 frankfurter:
+    base_url: "https://api.frankfurter.dev/v1"
+    endpoints:
+        latest: "/latest?from={from_currency}"
+        historical: "/{start_date}..{end_date}?from={from_currency}"
     quota_limit: 999999999 # Unlimited (Free)
     failover_to: null
     priority: 1
 
 exchangerate:
+    base_url_v4: "https://api.exchangerate-api.com/v4"
+    base_url_v6: "https://v6.exchangerate-api.com/v6"
+    endpoints:
+        latest_v4: "/latest/{base_currency}"
+        latest_v6: "/{api_key}/latest/{base_currency}"
     quota_limit: 50
     failover_to: currencylayer
     priority: 2
 
 currencylayer:
+    base_url: "http://api.currencylayer.com"
+    endpoints:
+        live: "/live?access_key={api_key}"
+        historical: "/historical?access_key={api_key}&date={date}"
+        timeframe: "/timeframe?access_key={api_key}&start_date={start_date}&end_date={end_date}"
     quota_limit: 100
     failover_to: null
     priority: 3

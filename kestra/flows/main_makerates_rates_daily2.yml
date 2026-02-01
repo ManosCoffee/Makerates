@@ -114,7 +114,7 @@ tasks:
         containerImage: makerates-ingestion-base:latest
         pullPolicy: NEVER
         networkMode: makerates-network
-        runIf: '{{ outputs.check_quotas["vars"]["exchangerate"] }}'
+        runIf: '{{ outputs.check_quotas.vars.exchangerate }}'
         env:
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
@@ -217,7 +217,7 @@ tasks:
         containerImage: makerates-ingestion-base:latest
         pullPolicy: NEVER
         networkMode: makerates-network
-        runIf: '{{ outputs.check_quotas["vars"]["exchangerate"] }}'
+        runIf: '{{ outputs.check_quotas.vars.exchangerate }}'
         env:
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
@@ -265,6 +265,44 @@ tasks:
           - iceberg_loader 
           - "--start-date={{ inputs.execution_date }}"
           - "--mode={{ vars.run_mode }}"
+
+  # ===== 2c. FETCH METADATA LOCATIONS FROM DYNAMODB =====
+  - id: fetch_iceberg_metadata_paths
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: amazon/aws-cli
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: makerates-network
+    dependsOn:
+      - create_iceberg_sources
+    env:
+      AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+      AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+      AWS_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
+    commands:
+      - |
+        # Fetch metadata for each Iceberg table from DynamoDB
+        FRANK_META=$(aws dynamodb get-item \
+          --table-name iceberg_metadata \
+          --key '{"table_name": {"S": "frankfurter_rates"}}' \
+          --query 'Item.metadata_location.S' \
+          --output text 2>/dev/null || echo "")
+
+        EXCH_META=$(aws dynamodb get-item \
+          --table-name iceberg_metadata \
+          --key '{"table_name": {"S": "exchangerate_rates"}}' \
+          --query 'Item.metadata_location.S' \
+          --output text 2>/dev/null || echo "")
+
+        CURR_META=$(aws dynamodb get-item \
+          --table-name iceberg_metadata \
+          --key '{"table_name": {"S": "currencylayer_rates"}}' \
+          --query 'Item.metadata_location.S' \
+          --output text 2>/dev/null || echo "")
+
+        # Output in Kestra format
+        echo "::{"outputs":{"frankfurter_metadata":"$FRANK_META","exchangerate_metadata":"$EXCH_META","currencylayer_metadata":"$CURR_META"}}::"
 
   # ===== 3. TRANSFORM (dbt) =====
   - id: git_sync
@@ -315,6 +353,8 @@ tasks:
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+      AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+      AWS_REGION: "{{ vars.ddb_default_region }}"
       MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
       MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
       MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
@@ -323,13 +363,18 @@ tasks:
       DBT_ICEBERG_BASE_PATH: "{{ vars.dbt_iceberg_base_path }}"
       EXECUTION_DATE: "{{ inputs.execution_date }}"
       PIPELINE_MODE: "{{ vars.run_mode }}"
+      # Iceberg metadata locations from DynamoDB
+      FRANKFURTER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.frankfurter_metadata }}"
+      EXCHANGERATE_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.exchangerate_metadata }}"
+      CURRENCYLAYER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.currencylayer_metadata }}"
     commands:
       - dbt deps
-      - "dbt build --vars '{\"frankfurter_metadata_location\": \"{{ outputs.fetch_metadata_locations.vars.frankfurter_metadata_location }}\"}'"
+      - dbt build 
       - pwd
       - ls -lah .
       - find . -name "*.duckdb" -o -name "*.db"
       # - cp analytics.duckdb /data/analytics_copied.duckdb
+      ##--vars '{\"frankfurter_metadata_location\": \"{{ outputs.fetch_metadata_locations.vars.frankfurter_metadata_location }}\"}'"
 
   - id: upload_ddb_file
     type: io.kestra.plugin.minio.Upload
@@ -351,7 +396,7 @@ tasks:
     namespaceFiles:
       enabled: true
     dependsOn:
-      - dbt_build
+      - dbt_validation_and_transform
     containerImage: makerates-ingestion-base:latest
     pullPolicy: NEVER
     networkMode: makerates-network

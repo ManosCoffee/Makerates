@@ -20,6 +20,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from utils.quota_manager import QuotaManager
+from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
 
 # Base URL
@@ -43,11 +44,16 @@ def currencylayer_source(date: Optional[str] = None):
         primary_key="extraction_id"
     )
     def get_rates():
+        config = load_config("apis.yaml")
+        base_url = config['currencylayer']['base_url']
+
         # Endpoint: /historical (if date) or /live
         if date:
-            url = f"{CURRENCYLAYER_BASE_URL}/historical?access_key={api_key}&date={date}"
+            endpoint = config['currencylayer']['endpoints']['historical']
+            url = f"{base_url}{endpoint}?access_key={api_key}&date={date}"
         else:
-            url = f"{CURRENCYLAYER_BASE_URL}/live?access_key={api_key}"
+            endpoint = config['currencylayer']['endpoints']['live']
+            url = f"{base_url}{endpoint}?access_key={api_key}"
 
         try:
             response = requests.get(url, timeout=10)
@@ -125,8 +131,12 @@ def currencylayer_range_source(start_date: str, end_date: str):
         primary_key="extraction_id"
     )
     def get_historical_range():
+        config = load_config("apis.yaml")
+        base_url = config['currencylayer']['base_url']
+        endpoint = config['currencylayer']['endpoints']['timeframe']
+        
         # Endpoint: /timeframe
-        url = f"{CURRENCYLAYER_BASE_URL}/timeframe?access_key={api_key}&start_date={start_date}&end_date={end_date}"
+        url = f"{base_url}{endpoint}?access_key={api_key}&start_date={start_date}&end_date={end_date}"
         
         try:
             logger.info(f"Fetching CurrencyLayer Timeframe: {start_date} to {end_date}")

@@ -8,7 +8,7 @@
 -- CurrencyLayer Staging
 -- Base Currency is typically USD (Free Tier) or EUR (Paid)
 
-{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("currencylayer_rates")) %}
+{% set metadata_path = get_latest_iceberg_metadata(get_iceberg_table_path("currencylayer_rates"), "currencylayer_rates") %}
 
 {% if metadata_path is none %}
     -- Table doesn't exist yet, return empty result with correct schema

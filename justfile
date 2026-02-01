@@ -1,5 +1,8 @@
-# Justfile for Makerates Pipeine
+# Justfile cookbook to run Makerates 
+
 set dotenv-load := true
+# set quiet := true
+
 
 # List all available commands
 default:
@@ -110,4 +113,30 @@ reset:
     @mkdir -p logs
     @echo "✨ Environment is clean."
     @echo "🔄 Restarting..."
-    just run
+    just init
+
+# ===== DuckDB UI Management =====
+
+fetch-duckdb-file:
+    @echo "Downloading latest analytics.duckdb from MinIO..."
+    docker run --rm \
+        --network makerates-network \
+        -v ./data:/data \
+        -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER \
+        -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD \
+        amazon/aws-cli s3 cp s3://analytics-bucket/analytics.duckdb /data/analytics.duckdb --endpoint-url http://minio:9000
+
+do-analytics:
+    @echo "Running analytics..."
+    just fetch-duckdb-file
+    @echo "Starting DuckDB UI on http://localhost:5522..."
+    @docker run -d --name duck-ui -p 5522:5522 ghcr.io/ibero-data/duck-ui:latest && open http://localhost:5522
+
+
+# Stop DuckDB UI
+duck-n-drop:
+    @docker stop duck-ui || true
+    @docker rm -f $(docker ps -a | grep 'duck-ui' | awk '{print $1}') || true
+
+
+
