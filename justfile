@@ -1,8 +1,8 @@
-# Justfile cookbook to run Makerates 
+# Justfile cookbook to run Makerates
 
 set dotenv-load := true
-# set quiet := true
 
+# set quiet := true
 
 # List all available commands
 default:
@@ -21,16 +21,6 @@ run:
     uv run python scripts/init_dynamodb.py --endpoint http://localhost:8000
     @echo "✅ Done! Makerates is running."
 
-# Rebuild the worker image and restart Kestra (Full Reload)
-# reload:
-#     @echo "🔄 Rebuilding services..."
-#     docker compose build --no-cache
-#     @echo "🚀 Restarting all services..."
-#     docker compose up -d
-#     @echo " Initializing DynamoDB tables..."
-#     uv run python scripts/init_dynamodb.py --endpoint http://localhost:8000
-#     @echo "✅ Done! Services reloaded."
-
 # Initialize DynamoDB Tables (Running local script)
 init-db:
     uv run python scripts/init_dynamodb.py
@@ -44,26 +34,33 @@ logs:
     docker logs -f makerates-kestra
 
 # Open Kestra UI
-ui-kestra:
-    open http://localhost:8080
+open-daily-topology:
+    open http://localhost:8080/ui/main/flows/edit/makerates/rates_daily/topology
+
+open-backfill-topology:
+    open http://localhost:8080/ui/main/flows/edit/makerates/rates_backfill/topology
 
 # Open MinIO Console
 ui-minio:
     open http://localhost:9001
 
 # DUCKDB
-## Initialize DuckDB
-# init-duckdb:
-#     cd data/duckdb && duckdb analytics.duckdb 
-## Open DuckDB Analytics (Gold) - Access database from Docker volume
-db-analytics:
-    @echo "📊 Accessing DuckDB from Docker volume..."
-    docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb
 
-## Open DuckDB Validation (Check flagged rates)
-db-validation:
-    @echo "🔍 Checking flagged rates from Docker volume..."
-    docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb "SELECT * FROM main_validation.consensus_check WHERE status = 'FLAGGED'"
+# Open DuckDB Analytics Preview Access database from local file (mounted via kestra)
+duck-it:
+    @echo "📊 Accessing DuckDB from Docker volume and showcasing example tables..."
+    @echo "Validated rates (consensus mechanism filtering applied: \n)"
+    @docker run --rm -it -v $(pwd)/data:/data -w /data duckdb/duckdb:latest duckdb analytics.duckdb \
+        "SELECT * FROM main_validation.fact_rates_validated ORDER BY extraction_id DESC LIMIT 10;" 
+    @echo "Overall rate analysis - weekly stats \n"
+    @docker run --rm -it -v $(pwd)/data:/data -w /data duckdb/duckdb:latest duckdb analytics.duckdb \
+        "SELECT * FROM main_analytics.mart_rate_analysis LIMIT 30;"
+    @echo "Conversion rates, ready to plug in financial data services . (Many-to-Many)\n"
+    @docker run --rm -it -v $(pwd)/data:/data -w /data duckdb/duckdb:latest duckdb analytics.duckdb \
+        "SELECT * FROM main_analytics.mart_currency_conversions LIMIT 30;" 
+    @echo "Rate volatility and risk assessment - 7day & 30day metrics \n"
+    @docker run --rm -it -v $(pwd)/data:/data -w /data duckdb/duckdb:latest duckdb analytics.duckdb \
+        "SELECT * FROM main_analytics.mart_rate_volatility LIMIT 30;"
 
 # Create analytics bucket in MinIO (if missing)
 init-minio-buckets:
@@ -72,11 +69,6 @@ init-minio-buckets:
     @docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 mb s3://silver-bucket || echo "Silver bucket might already exist."
     @docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 mb s3://analytics-bucket || echo "Analytics bucket might already exist."
     @echo "✅ Buckets created."
-
-# Debug S3 Connectivity from DuckDB
-debug-s3-connectivity:
-    @echo "🔍 Testing S3 access from DuckDB..."
-    docker exec -it duckdb-ui duckdb -c "INSTALL httpfs; LOAD httpfs; SET s3_endpoint='minio:9000'; SET s3_use_ssl=false; SET s3_url_style='path'; SET s3_access_key_id='$MINIO_ROOT_USER'; SET s3_secret_access_key='$MINIO_ROOT_PASSWORD'; SELECT * FROM glob('s3://silver-bucket/iceberg/frankfurter_rates/metadata/*.metadata.json');"
 
 # Clean corrupted Iceberg catalog tables (fixes constraint violations)
 clean-iceberg:
@@ -116,29 +108,3 @@ reset:
     @echo "✨ Environment is clean."
     @echo "🔄 Restarting..."
     just init
-
-# ===== DuckDB UI Management =====
-
-fetch-duckdb-file:
-    @echo "Downloading latest analytics.duckdb from MinIO..."
-    docker run --rm \
-        --network makerates-network \
-        -v ./data:/data \
-        -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER \
-        -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD \
-        amazon/aws-cli s3 cp s3://analytics-bucket/analytics.duckdb /data/analytics.duckdb --endpoint-url http://minio:9000
-
-do-analytics:
-    @echo "Running analytics..."
-    just fetch-duckdb-file
-    @echo "Starting DuckDB UI on http://localhost:5522..."
-    @docker run -d --name duck-ui -p 5522:5522 ghcr.io/ibero-data/duck-ui:latest && open http://localhost:5522
-
-
-# Stop DuckDB UI
-duck-n-drop:
-    @docker stop duck-ui || true
-    @docker rm -f $(docker ps -a | grep 'duck-ui' | awk '{print $1}') || true
-
-
-
