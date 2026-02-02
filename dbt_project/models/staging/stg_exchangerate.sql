@@ -1,7 +1,8 @@
 {{
   config(
     materialized='incremental',
-    incremental_strategy='append',
+    incremental_strategy='merge',
+    unique_key=['base_currency', 'target_currency', 'rate_date'],
     tags=['staging', 'exchangerate']
   )
 }}
@@ -76,8 +77,8 @@ deduplicated AS (
     SELECT * FROM ranked_rates WHERE rn = 1
 )
 
--- Append strategy: allows duplicates ACROSS runs (audit trail)
--- But deduplicate WITHIN each run
+-- Merge strategy: maintains uniqueness on (base_currency, target_currency, rate_date)
+-- Updates existing rows, inserts new rows (upsert behavior)
 SELECT
     extraction_id,
     CAST(extraction_timestamp AS TIMESTAMP) AS extraction_timestamp,
