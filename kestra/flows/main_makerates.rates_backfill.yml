@@ -74,9 +74,9 @@ tasks:
     networkMode: makerates-network
     env:
       DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
-      AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
-      AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
-      AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+      DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+      DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+      DYNAMODB_AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
     commands:
       - quotas_endpoint
 
@@ -182,11 +182,16 @@ tasks:
         pullPolicy: NEVER
         networkMode: makerates-network
         env:
-          # --- S3 Connectivity ---
+          # AWS creds for MinIO S3 (ICEBERG)
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
           AWS_REGION: "{{ vars.ddb_default_region }}"
           AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+
+          # AWS creds for DynamoDB (ICEBERG)
+          DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+          DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+          DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
 
           # --- Iceberg App Params ---
           SOURCE_BUCKET: "{{ vars.source_bucket }}"
@@ -216,11 +221,16 @@ tasks:
         pullPolicy: NEVER
         networkMode: makerates-network
         env:
-          # --- S3 Connectivity ---
+          # AWS creds for MinIO S3 (ICEBERG)
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
           AWS_REGION: "{{ vars.ddb_default_region }}"
           AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+
+          # AWS creds for DynamoDB (ICEBERG)
+          DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+          DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+          DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
 
           # --- Iceberg App Params ---
           SOURCE_BUCKET: "{{ vars.source_bucket }}"
@@ -320,8 +330,11 @@ tasks:
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       networkMode: makerates-network
+      volumes:
+        # - makerates-dbt-data:/data
+        - ./data:/data
     outputFiles:
-      - analytics.duckdb
+      - /data/analytics.duckdb
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
