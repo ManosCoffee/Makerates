@@ -50,10 +50,10 @@ def currencylayer_source(date: Optional[str] = None):
         # Endpoint: /historical (if date) or /live
         if date:
             endpoint = config['currencylayer']['endpoints']['historical']
-            url = f"{base_url}{endpoint}?access_key={api_key}&date={date}"
+            url = f"{base_url}{endpoint.format(api_key=api_key, date=date)}"
         else:
             endpoint = config['currencylayer']['endpoints']['live']
-            url = f"{base_url}{endpoint}?access_key={api_key}"
+            url = f"{base_url}{endpoint.format(api_key=api_key)}"
 
         try:
             response = requests.get(url, timeout=10)
@@ -134,9 +134,9 @@ def currencylayer_range_source(start_date: str, end_date: str):
         config = load_config("apis.yaml")
         base_url = config['currencylayer']['base_url']
         endpoint = config['currencylayer']['endpoints']['timeframe']
-        
+
         # Endpoint: /timeframe
-        url = f"{base_url}{endpoint}?access_key={api_key}&start_date={start_date}&end_date={end_date}"
+        url = f"{base_url}{endpoint.format(api_key=api_key, start_date=start_date, end_date=end_date)}"
         
         try:
             logger.info(f"Fetching CurrencyLayer Timeframe: {start_date} to {end_date}")

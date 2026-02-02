@@ -108,15 +108,14 @@ def frankfurter_range_source(start_date: str, end_date: str):
         Data in control line-by-line with dlt! :)
         """
         # Frankfurter Time Series Endpoint
-        # Frankfurter Time Series Endpoint
         config = load_config("apis.yaml")
         base_url = config['frankfurter']['base_url']
-        # Endpoint template: /{start_date}..{end_date}
+        # Endpoint template: /{start_date}..{end_date}?from={from_currency}
         endpoint_template = config['frankfurter']['endpoints']['historical']
-        # Replace placeholders
-        endpoint = endpoint_template.replace("{start_date}", start_date).replace("{end_date}", end_date)
-        
-        url = f"{base_url}{endpoint}?from=USD"
+        # Replace all placeholders
+        endpoint = endpoint_template.format(start_date=start_date, end_date=end_date, from_currency="USD")
+
+        url = f"{base_url}{endpoint}"
         
         try:
             response = requests.get(url, timeout=30) # Longer timeout for range
