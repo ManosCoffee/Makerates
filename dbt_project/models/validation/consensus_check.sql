@@ -11,7 +11,7 @@
 Consensus Check: Multi-Source Validation
 Sources: ExchangeRate-API (Primary), Frankfurter (Secondary), CurrencyLayer (Tertiary/Failover)
 
-Logic:
+We:
 1. Normalize all rates to USD base.
 2. Calculate Median Rate (Consensus).
 3. Flag sources deviating > 0.5% from Median.
@@ -127,6 +127,6 @@ WHERE s.consensus_rate IS NOT NULL
   )
 
 {% if is_incremental() %}
-  -- Only process new/updated dates (with 7-day lookback for late-arriving data)
-  AND s.rate_date >= (SELECT MAX(rate_date) FROM {{ this }}) - INTERVAL '7 days'
+  -- Only process new/updated dates (with 3-day lookback for late-arriving data)
+  AND s.rate_date >= (SELECT MAX(rate_date) FROM {{ this }}) - INTERVAL '3 days'
 {% endif %}

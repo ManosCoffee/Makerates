@@ -229,8 +229,8 @@ LEFT JOIN anomalies a
 WHERE validation_status = 'VALIDATED'
 
 {% if is_incremental() %}
-  -- Only process new/updated dates (with 7-day lookback for late-arriving data)
-  AND r.rate_date >= (SELECT MAX(rate_date) FROM {{ this }}) - INTERVAL '7 days'
+  -- Only process new/updated dates (with 3-day lookback for late-arriving data)
+  AND r.rate_date >= (SELECT MAX(rate_date) FROM {{ this }}) - INTERVAL '3 days'
 {% endif %}
 
 ORDER BY r.rate_date DESC, r.target_currency

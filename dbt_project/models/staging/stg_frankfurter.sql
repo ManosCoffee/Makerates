@@ -1,19 +1,12 @@
 {{
   config(
-    materialized='view',
+    materialized='incremental',
+    incremental_strategy='append',
     tags=['staging', 'frankfurter']
   )
 }}
 
-/*
-Staging model for Frankfurter (ECB) rates.
 
-Reads Bronze JSONL data from dlt and unpacks the flattened rates columns
-into a normalized structure suitable for consensus checking.
-
-Source: Public Frankfurter API (ECB data)
-Secondary Source for EUR-based exchange rates
-*/
 
 {% set table_path = get_iceberg_table_path("frankfurter_rates") %}
 {% set metadata_path = get_latest_iceberg_metadata(table_path, "frankfurter_rates") %}
@@ -36,11 +29,16 @@ Secondary Source for EUR-based exchange rates
 {% else %}
 
 WITH bronze_data AS (
-    -- Read from Raw Iceberg Table (Compacted & Deduplicated)
+    -- Read from Raw Iceberg Table
     -- Use table root path, not metadata.json path
     SELECT *
     FROM iceberg_scan('{{ table_path }}', allow_moved_paths=true)
-    WHERE source = 'frankfurter'
+    WHERE rate_date >= CAST('{{ env_var("EXECUTION_DATE", "1970-01-01") }}' AS DATE)
+
+    {% if is_incremental() %}
+      -- Only process new dates (no lookback - append is simple!)
+      AND rate_date > (SELECT MAX(rate_date) FROM {{ this }})
+    {% endif %}
 ),
 
 -- Extract rates map into rows using UNNEST
@@ -58,22 +56,23 @@ unnested_rates AS (
     FROM bronze_data b
 ),
 
+-- Within-run deduplication (in case Iceberg has multiple rows for same date)
 ranked_rates AS (
-    SELECT 
+    SELECT
         *,
         ROW_NUMBER() OVER (
-            PARTITION BY base_currency, target_currency, rate_date 
+            PARTITION BY base_currency, target_currency, rate_date
             ORDER BY extraction_timestamp DESC
         ) as rn
     FROM unnested_rates
 ),
 
 deduplicated AS (
-    -- Deduplicate for each rate_date based on LATEST extraction_timestamp
-    SELECT * FROM ranked_rates
-    WHERE rn = 1
+    SELECT * FROM ranked_rates WHERE rn = 1
 )
 
+-- Append strategy: allows duplicates ACROSS runs (audit trail)
+-- But deduplicate WITHIN each run
 SELECT
     extraction_id,
     CAST(extraction_timestamp AS TIMESTAMP) AS extraction_timestamp,
@@ -88,6 +87,5 @@ SELECT
     CURRENT_TIMESTAMP AS dbt_loaded_at
 FROM deduplicated
 WHERE exchange_rate > 0
-ORDER BY extraction_timestamp DESC, target_currency
 
 {% endif %}
