@@ -147,8 +147,9 @@ services:
             configurations:
               - type: io.kestra.plugin.scripts.runner.docker.Docker
                 values:
+                  volume-enabled: true
                   networkMode: makerates-network
-                  volumeEnabled: true
+
       DOCKER_HOST: unix:///var/run/docker.sock
       # DLT Configuration Injection
       KESTRA_DESTINATION__FILESYSTEM__BUCKET_URL: ${DESTINATION__FILESYSTEM__BUCKET_URL}
@@ -203,7 +204,7 @@ services:
       DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
     volumes:
-      - makerates-dbt-data:/data # Mount shared DBT volume
+      - makerates-dbt-data:. # Mount shared DBT volume
   dynamodb-ui-admin:
     image: aaronshaf/dynamodb-admin
     container_name: makerates-dynamodb-admin
