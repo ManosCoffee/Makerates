@@ -15,7 +15,7 @@ from typing import Dict, Any
 from pathlib import Path
 from utils.helpers import load_config,parse_env_vars_config
 from utils.dynamodb import DynamoDBClient
-from util.logging_config import root_logger as logger
+from utils.logging_config import root_logger as logger
 
 # ENV VARS FOR JOB CONFIG 
 JOB_CONFIG_FILE = "settings.yaml"
