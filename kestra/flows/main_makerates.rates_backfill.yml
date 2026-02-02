@@ -241,17 +241,26 @@ tasks:
           - "--end-date={{ inputs.end_date }}"
           - "--mode={{vars.run_mode}}"
 
-  #  3. TRANSFORM (dbt) via Reusable Volume =====
+  # ===== 3. SYNC DBT PROJECT FROM GIT =====
+  - id: sync
+    type: io.kestra.plugin.git.SyncNamespaceFiles
+    disabled: false
+    url: https://github.com/ManosCoffee/Makerates
+    branch: main
+    namespace: makerates
+    gitDirectory: dbt_project
+    dryRun: false
+
+  # ===== 4. TRANSFORM (dbt) via Namespace Files =====
   - id: validate_and_transform
     type: io.kestra.plugin.dbt.cli.DbtCLI
     allowWarnings: true
-    taskRunner: # Recommended: Use 'taskRunner' for modern Docker runner configuration
+    containerImage: makerates-ingestion-base:latest
+    namespaceFiles:
+      enabled: true
+    taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
-      image: makerates-ingestion-base:latest
-      pullPolicy: NEVER
       networkMode: makerates-network
-    projectDir: /app/dbt_project
-    profilesDir: /app/dbt_project
     outputFiles:
       - analytics.duckdb
     env:
@@ -263,11 +272,11 @@ tasks:
       DUCKDB_PATH: "/data/analytics.duckdb"
       DBT_SILVER_BUCKET: "{{ vars.dbt_silver_bucket }}"
       DBT_ICEBERG_BASE_PATH: "{{ vars.dbt_iceberg_base_path }}"
+      EXECUTION_DATE: "{{ inputs.start_date }}"
+      PIPELINE_MODE: "backfill"
     commands:
-      - dbt deps --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      - dbt seed --project-dir /app/dbt_project --profiles-dir /app/dbt_project
-      # Run all models in dependency order
-      - dbt build --project-dir /app/dbt_project --profiles-dir /app/dbt_project
+      - dbt deps
+      - dbt build
 
 
 errors:

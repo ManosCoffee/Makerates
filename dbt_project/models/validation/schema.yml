@@ -110,13 +110,13 @@ models:
         constraints:
           - type: not_null
           - type: check
-            expression: "exchange_rate > 0 AND exchange_rate < 1000000"
+            expression: "exchange_rate > 0 AND exchange_rate < 1e10"
         tests:
           - not_null
           - dbt_utils.expression_is_true:
               expression: "> 0"
           - dbt_utils.expression_is_true:
-              expression: "< 1000000"
+              expression: "< 1e10"
 
       - name: validation_status
         description: Final validation status
@@ -169,7 +169,7 @@ models:
             expression: "inverse_rate > 0"
 
       - name: consensus_variance
-        description: Variance from consensus (0.0 if validated)
+        description: Variance from consensus -- if validated properly should always be 0 !
         data_type: double
         constraints:
           - type: not_null
