@@ -259,7 +259,7 @@ tasks:
         networkMode: makerates-network
         runIf: '{{ inputs.include_currencylayer or (not outputs.check_quotas.vars.exchangerate) }}'
         env:
-          # AWS creds fro MinIO S3 (ICEBERG)
+          # AWS creds for MinIO S3 (ICEBERG)
           AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
           AWS_REGION: "{{ vars.ddb_default_region }}"
@@ -361,8 +361,8 @@ tasks:
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       networkMode: makerates-network
-      # volumes
-        # - /Users/manos/dev/makerates/data:/data
+      volumes:
+        -   "{{ envs.host_pwd }}/data:/data"
     outputFiles:
       - analytics.duckdb
     env:
@@ -373,7 +373,7 @@ tasks:
       MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
       MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
       MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
-      DUCKDB_PATH: "analytics.duckdb" # Writes to working dir for outputFiles
+      DUCKDB_PATH: "/data/analytics.duckdb"
       DBT_SILVER_BUCKET: "{{ vars.dbt_silver_bucket }}"
       DBT_ICEBERG_BASE_PATH: "{{ vars.dbt_iceberg_base_path }}"
       EXECUTION_DATE: "{{ inputs.execution_date }}"
@@ -385,29 +385,12 @@ tasks:
     commands:
       - dbt deps
       - dbt build
-      - pwd
-      - ls -lah .
-      - find . -name "*.duckdb" -o -name "*.db"
-
-  - id: upload_ddb_file
-    type: io.kestra.plugin.minio.Upload
-    namespaceFiles:
-      enabled: true
-    region: "{{ envs.dynamodb_aws_default_region }}"
-    endpoint: "{{ envs.minio_endpoint }}"  
-    accessKeyId: "{{ envs.destination__filesystem__credentials__aws_access_key_id }}"
-    secretKeyId: "{{ envs.destination__filesystem__credentials__aws_secret_access_key }}"
-    from: "{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}" #"{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}"
-    bucket: "analytics-bucket"
-    key: "analytics.duckdb"
-         
-
+      - cp /data/analytics.duckdb ./analytics.duckdb
+      - ls -lah analytics.duckdb
 
   # ===== 4. UPSERT TO DYNAMODB =====
   - id: sync_to_dynamodb
     type: io.kestra.plugin.docker.Run
-    namespaceFiles:
-      enabled: true
     dependsOn:
       - dbt_validation_and_transform
     containerImage: makerates-ingestion-base:latest
@@ -421,7 +404,7 @@ tasks:
       DYNAMODB_TABLE_NAME: "{{ vars.dynamodb_currencies_table_name }}"
       DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
       DYNAMODB_AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
-      DUCKDB_PATH: "analytics.duckdb" # Reads from Kestra inputFiles
+      DUCKDB_PATH: "analytics.duckdb"
       MODE: "{{ vars.run_mode }}"
     workingDir: /app
     commands:
