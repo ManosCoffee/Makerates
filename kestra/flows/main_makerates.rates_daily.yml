@@ -416,19 +416,16 @@ tasks:
     inputFiles:
       analytics.duckdb: "{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}"
     env:
-      AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
-      AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
-      AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
-      AWS_REGION: "{{ vars.ddb_default_region }}"
+      DYNAMODB_AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+      DYNAMODB_AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
       DYNAMODB_TABLE_NAME: "{{ vars.dynamodb_currencies_table_name }}"
-      DYNAMODB_ENDPOINT_URL: "{{ vars.dynamodb_endpoint }}"
-      DYNAMODB_REGION: "{{ vars.ddb_default_region }}"
+      DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+      DYNAMODB_AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
       DUCKDB_PATH: "analytics.duckdb" # Reads from Kestra inputFiles
       MODE: "{{ vars.run_mode }}"
     workingDir: /app
     commands:
-      - sync_gold_to_dynamodb # Uses python -m entrypoint, PYTHONPATH=/app/src
-      # - sync_gold_to_dynamodb
+      - sync_gold_to_dynamodb 
     timeout: PT5M
     retry:
       type: constant

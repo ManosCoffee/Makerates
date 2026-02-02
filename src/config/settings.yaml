@@ -23,6 +23,10 @@ sync_job:
   env_vars:
     required:
       - DYNAMODB_TABLE_NAME
+      # - DYNAMODB_AWS_ACCESS_KEY_ID
+      # - DYNAMODB_AWS_SECRET_ACCESS_KEY
+      # - DYNAMODB_AWS_DEFAULT_REGION
+      # - DYNAMODB_ENDPOINT
     optional:
       - DUCKDB_PATH
   defaults:

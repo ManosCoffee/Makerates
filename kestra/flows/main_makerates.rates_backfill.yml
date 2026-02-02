@@ -241,6 +241,63 @@ tasks:
           - "--end-date={{ inputs.end_date }}"
           - "--mode={{vars.run_mode}}"
 
+  # ===== 2c. FETCH METADATA LOCATIONS FROM DYNAMODB =====
+  - id: fetch_iceberg_metadata_paths
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: python:3.12-slim
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: makerates-network
+    dependsOn:
+      - create_iceberg_sources
+    beforeCommands:
+      - pip install boto3 kestra
+    env:
+      AWS_ACCESS_KEY_ID: "{{ vars.ddb_access_key_id }}"
+      AWS_SECRET_ACCESS_KEY: "{{ vars.ddb_secret_access_key }}"
+      AWS_DEFAULT_REGION: "{{ vars.ddb_default_region }}"
+      DYNAMODB_ENDPOINT: "{{ vars.dynamodb_endpoint }}"
+    script: |
+      import boto3
+      import os
+      from kestra import Kestra
+
+      # Initialize DynamoDB client
+      ddb = boto3.client(
+          'dynamodb',
+          endpoint_url=os.environ['DYNAMODB_ENDPOINT'],
+          region_name=os.environ['AWS_DEFAULT_REGION'],
+          aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+          aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY']
+      )
+
+      # Fetch metadata for each table (backfill only uses Frankfurter & CurrencyLayer)
+      tables = {
+          'frankfurter_rates': 'frankfurter_metadata',
+          'currencylayer_rates': 'currencylayer_metadata'
+      }
+
+      outputs = {}
+      for table_name, output_key in tables.items():
+          try:
+              response = ddb.get_item(
+                  TableName='iceberg_metadata',
+                  Key={'table_name': {'S': table_name}}
+              )
+              if 'Item' in response and 'metadata_location' in response['Item']:
+                  metadata_location = response['Item']['metadata_location']['S']
+                  outputs[output_key] = metadata_location
+                  print(f"✅ {table_name}: {metadata_location}")
+              else:
+                  outputs[output_key] = ""
+                  print(f"⚠️  {table_name}: No metadata found")
+          except Exception as e:
+              outputs[output_key] = ""
+              print(f"❌ {table_name}: Error - {e}")
+
+      # Output using Kestra SDK
+      Kestra.outputs(outputs)
+
   # ===== 3. SYNC DBT PROJECT FROM GIT =====
   - id: sync
     type: io.kestra.plugin.git.SyncNamespaceFiles
@@ -252,10 +309,12 @@ tasks:
     dryRun: false
 
   # ===== 4. TRANSFORM (dbt) via Namespace Files =====
-  - id: validate_and_transform
+  - id: dbt_validation_and_transform
     type: io.kestra.plugin.dbt.cli.DbtCLI
     allowWarnings: true
     containerImage: makerates-ingestion-base:latest
+    dependsOn:
+      - fetch_iceberg_metadata_paths
     namespaceFiles:
       enabled: true
     taskRunner:
@@ -266,6 +325,8 @@ tasks:
     env:
       AWS_ACCESS_KEY_ID: "{{ vars.dlt_aws_access_key_id }}"
       AWS_SECRET_ACCESS_KEY: "{{ vars.dlt_aws_secret_access_key }}"
+      AWS_ENDPOINT_URL: "{{ vars.minio_endpoint }}"
+      AWS_REGION: "{{ vars.ddb_default_region }}"
       MINIO_ENDPOINT: "{{ vars.minio_endpoint }}"
       MINIO_ROOT_USER: "{{ vars.minio_root_user }}"
       MINIO_ROOT_PASSWORD: "{{ vars.minio_root_password }}"
@@ -274,9 +335,26 @@ tasks:
       DBT_ICEBERG_BASE_PATH: "{{ vars.dbt_iceberg_base_path }}"
       EXECUTION_DATE: "{{ inputs.start_date }}"
       PIPELINE_MODE: "backfill"
+      # Iceberg metadata locations from DynamoDB (for dbt macro optimization)
+      FRANKFURTER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.frankfurter_metadata | default('') }}"
+      CURRENCYLAYER_METADATA_LOCATION: "{{ outputs.fetch_iceberg_metadata_paths.outputs.currencylayer_metadata | default('') }}"
     commands:
       - dbt deps
       - dbt build
+
+  - id: upload_ddb_file
+    type: io.kestra.plugin.minio.Upload
+    namespaceFiles:
+      enabled: true
+    region: "{{ envs.dynamodb_aws_default_region }}"
+    endpoint: "{{ envs.minio_endpoint }}"  
+    accessKeyId: "{{ envs.destination__filesystem__credentials__aws_access_key_id }}"
+    secretKeyId: "{{ envs.destination__filesystem__credentials__aws_secret_access_key }}"
+    from: "{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}" #"{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}"
+    bucket: "analytics-bucket"
+    key: "analytics.duckdb"
+
+
 
 
 errors:
