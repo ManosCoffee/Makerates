@@ -166,26 +166,18 @@ class IcebergLoader:
     def get_arrow_batch(self, source_pattern: str) -> Optional[pa.Table]:
         """
         Reads JSONL from S3 using DuckDB, deduplicates, and returns a PyArrow Table.
+        Handles flattened dlt schema (rates__usd, rates__aed, etc.) and reconstructs MAP.
         """
         logger.info(f"Scanning source pattern: {source_pattern}")
-        
+
+        # Step 1: Read with auto schema detection to get all flattened columns
         query = f"""
-        CREATE OR REPLACE TEMP TABLE bronze_raw AS 
+        CREATE OR REPLACE TEMP TABLE bronze_flattened AS
         SELECT *
-        FROM read_json('{source_pattern}',
+        FROM read_json_auto('{source_pattern}',
             format='newline_delimited',
             filename=true,
-            columns={{
-                'extraction_id': 'VARCHAR',
-                'extraction_timestamp': 'VARCHAR',
-                'source': 'VARCHAR',
-                'source_tier': 'VARCHAR',
-                'base_currency': 'VARCHAR',
-                'rate_date': 'VARCHAR',
-                'rates': 'MAP(VARCHAR, DOUBLE)',
-                'timestamp': 'BIGINT',
-                'http_status_code': 'INTEGER'
-            }}
+            maximum_object_size=50000000
         );
         """
         try:
@@ -195,6 +187,81 @@ class IcebergLoader:
                  logger.warning(f"No files match pattern: {source_pattern}")
                  return None
             raise e
+
+        # Step 2: Reconstruct the rates MAP from flattened rates__* columns
+        # Get list of all rates__* columns dynamically
+        rates_cols_query = """
+        SELECT column_name
+        FROM (DESCRIBE SELECT * FROM bronze_flattened)
+        WHERE column_name LIKE 'rates__%'
+        """
+        rates_cols = [row[0] for row in self.con.sql(rates_cols_query).fetchall()]
+
+        if rates_cols:
+            # Build MAP using map_from_entries with FILTER to exclude NULLs
+            # Create list of struct entries: {key: 'USD', value: rates__usd}
+            # Filter out NULL values to avoid Arrow errors
+            currency_keys_raw = [col.replace('rates__', '').upper() for col in rates_cols]
+
+            # Filter out empty or invalid keys (defensive check)
+            valid_pairs = [(col, key) for col, key in zip(rates_cols, currency_keys_raw) if key and len(key) > 0]
+
+            if not valid_pairs:
+                # No valid currency columns found
+                rates_map_expr = "MAP([], [])::MAP(VARCHAR, DOUBLE) AS rates"
+                logger.warning("No valid rates__* columns found after filtering, creating empty rates MAP")
+            else:
+                logger.info(f"Reconstructing MAP from {len(valid_pairs)} valid flattened rate columns (filtering NULLs and empty keys)")
+                currency_keys_list = [key for _, key in valid_pairs]
+                logger.info(f"Currency keys: {currency_keys_list}")
+
+                # Build CASE expressions to create structs only for non-NULL values with non-empty keys
+                struct_list = ", ".join([
+                    f"CASE WHEN {col} IS NOT NULL THEN "
+                    f"{{key: '{key}', value: CAST({col} AS DOUBLE)}} "
+                    f"END"
+                    for col, key in valid_pairs
+                ])
+
+                # Use list_filter to remove NULL struct entries, then map_from_entries
+                rates_map_expr = f"map_from_entries(list_filter([{struct_list}], x -> x IS NOT NULL)) AS rates"
+                logger.debug(f"MAP expression (first 200 chars): {rates_map_expr[:200]}...")
+        else:
+            # Fallback: empty MAP if no rates columns found
+            rates_map_expr = "MAP([], [])::MAP(VARCHAR, DOUBLE) AS rates"
+            logger.warning("No rates__* columns found, creating empty rates MAP")
+
+        # Step 3: Determine which timestamp column exists
+        # Check column names in bronze_flattened
+        cols_query = "SELECT column_name FROM (DESCRIBE SELECT * FROM bronze_flattened)"
+        existing_cols = [row[0] for row in self.con.sql(cols_query).fetchall()]
+
+        # Use rate_timestamp if it exists, otherwise fall back to timestamp
+        if 'rate_timestamp' in existing_cols:
+            timestamp_expr = "rate_timestamp AS timestamp"
+        elif 'timestamp' in existing_cols:
+            timestamp_expr = "timestamp"
+        else:
+            timestamp_expr = "NULL::BIGINT AS timestamp"
+
+        # Step 4: Create final bronze_raw table with reconstructed MAP
+        reconstruct_query = f"""
+        CREATE OR REPLACE TEMP TABLE bronze_raw AS
+        SELECT
+            extraction_id,
+            extraction_timestamp,
+            source,
+            source_tier,
+            base_currency,
+            rate_date,
+            {rates_map_expr},
+            {timestamp_expr},
+            http_status_code,
+            filename
+        FROM bronze_flattened;
+        """
+        self.con.sql(reconstruct_query)
+        logger.info("✅ Successfully reconstructed rates MAP from flattened schema")
         
         # Deduplication Logic
         # Read PKs from Env Config (List)
@@ -229,15 +296,34 @@ class IcebergLoader:
         """
         
         logger.info(f"Executing DuckDB Query with Deduplication on keys: {self.pk_list} based on extraction_timestamp")
-        arrow_result = self.con.sql(final_query).arrow()
-        
-        if isinstance(arrow_result, pa.RecordBatchReader):
-            arrow_table = arrow_result.read_all()
-        else:
-            arrow_table = arrow_result
-            
-        logger.info(f"Read {arrow_table.num_rows} rows (after dedup) for period {self.start_date} to {self.end_date}")
-        return arrow_table
+
+        try:
+            arrow_result = self.con.sql(final_query).arrow()
+
+            if isinstance(arrow_result, pa.RecordBatchReader):
+                arrow_table = arrow_result.read_all()
+            else:
+                arrow_table = arrow_result
+
+            logger.info(f"Read {arrow_table.num_rows} rows (after dedup) for period {self.start_date} to {self.end_date}")
+
+            # Diagnostic: Check rates column for NULL keys
+            if 'rates' in arrow_table.schema.names and arrow_table.num_rows > 0:
+                logger.info("Validating rates MAP column...")
+                rates_col = arrow_table.column('rates')
+
+                # Sample the first few rows to check for issues
+                for i in range(min(3, len(rates_col))):
+                    map_value = rates_col[i]
+                    if map_value.is_valid:
+                        logger.debug(f"Row {i} rates: {map_value.as_py()}")
+
+            return arrow_table
+
+        except Exception as e:
+            logger.error(f"Failed to create Arrow table from DuckDB: {e}")
+            logger.error(f"Final query (first 500 chars): {final_query[:500]}")
+            raise
 
     def load_to_iceberg(self, arrow_table: pa.Table):
         """
@@ -300,9 +386,43 @@ class IcebergLoader:
                 )
                 
                 
-            
+
             logger.info(f"Upserting {arrow_table.num_rows} rows using keys: {self.pk_list}...")
-            upsert_result = table.upsert(df=arrow_table, join_cols=self.pk_list)
+
+            # Validate arrow table before upsert (defensive check for MAP schema issues)
+            try:
+                # Check if rates column exists and log its type
+                if 'rates' in arrow_table.schema.names:
+                    rates_field = arrow_table.schema.field('rates')
+                    logger.info(f"Rates column type: {rates_field.type}")
+
+                    # Quick validation: try to access the column (doesn't modify data)
+                    rates_col = arrow_table.column('rates')
+                    logger.info(f"✅ Rates column accessible, {len(rates_col)} entries")
+            except Exception as e:
+                logger.error(f"Arrow table validation failed: {e}")
+                logger.error(f"Schema: {arrow_table.schema}")
+                raise
+
+            try:
+                upsert_result = table.upsert(df=arrow_table, join_cols=self.pk_list)
+            except Exception as e:
+                if "Map array keys array should have no nulls" in str(e):
+                    logger.error("═" * 80)
+                    logger.error("ARROW VALIDATION ERROR: NULL keys detected in MAP column")
+                    logger.error("═" * 80)
+                    logger.error("This might be caused by:")
+                    logger.error("1. Existing data in Iceberg table with NULL MAP keys from previous run")
+                    logger.error("2. Schema mismatch between existing and new data")
+                    logger.error("3. DuckDB map_from_entries creating NULL keys")
+                    logger.error("")
+                    logger.error("REMEDIATION OPTIONS:")
+                    logger.error("A. Drop and recreate the Iceberg table:")
+                    logger.error(f"   - Delete s3://silver-bucket/iceberg/{table_name}/")
+                    logger.error(f"   - Delete DynamoDB metadata for {table_name}")
+                    logger.error("B. Check if there are orphaned metadata files")
+                    logger.error("═" * 80)
+                raise
             logger.info("Upsert complete.")
             logger.info("\nUpsert operation completed")
             logger.info(f"Rows Updated: {upsert_result.rows_updated}")
