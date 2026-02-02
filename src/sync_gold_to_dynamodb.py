@@ -13,13 +13,10 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, Any
 from pathlib import Path
-from utils.helpers import load_config
+from utils.helpers import load_config,parse_env_vars_config
 from utils.dynamodb import DynamoDBClient
-from utils.helpers import parse_env_vars_config
+from util.logging_config import root_logger as logger
 
-# Setup Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 # ENV VARS FOR JOB CONFIG 
 JOB_CONFIG_FILE = "settings.yaml"
 

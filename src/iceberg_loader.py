@@ -217,14 +217,16 @@ class IcebergLoader:
 
                 # Build CASE expressions to create structs only for non-NULL values with non-empty keys
                 struct_list = ", ".join([
-                    f"CASE WHEN {col} IS NOT NULL THEN "
+                    f"CASE WHEN {col} IS NOT NULL AND {col} IS NOT NaN THEN "
                     f"{{key: '{key}', value: CAST({col} AS DOUBLE)}} "
                     f"END"
                     for col, key in valid_pairs
                 ])
 
-                # Use list_filter to remove NULL struct entries, then map_from_entries
-                rates_map_expr = f"map_from_entries(list_filter([{struct_list}], x -> x IS NOT NULL)) AS rates"
+                # Use list_filter to remove NULL struct entries AND validate keys are not NULL/empty
+                # COALESCE with empty MAP to handle edge cases on subsequent runs
+                # This prevents Arrow validation errors from NULL keys
+                rates_map_expr = f"COALESCE(map_from_entries(list_filter([{struct_list}], x -> x IS NOT NULL AND x.key IS NOT NULL AND x.key != '')), MAP([], [])::MAP(VARCHAR, DOUBLE)) AS rates"
                 logger.debug(f"MAP expression (first 200 chars): {rates_map_expr[:200]}...")
         else:
             # Fallback: empty MAP if no rates columns found
@@ -287,6 +289,32 @@ class IcebergLoader:
         """
         
         logger.info(f"Executing DuckDB Query with Deduplication on keys: {self.pk_list} based on extraction_timestamp")
+
+        # CRITICAL: Validate MAP has no NULL keys before Arrow conversion (prevents idempotency issues)
+        validation_query = f"""
+        SELECT COUNT(*) as invalid_count
+        FROM ({final_query}) validated
+        WHERE EXISTS (
+            SELECT 1 FROM unnest(map_keys(validated.rates)) AS k(key)
+            WHERE k.key IS NULL OR k.key = ''
+        )
+        """
+        try:
+            invalid_result = self.con.sql(validation_query).fetchone()
+            if invalid_result and invalid_result[0] > 0:
+                logger.error(f"❌ CRITICAL: Found {invalid_result[0]} rows with NULL or empty MAP keys!")
+                logger.error("This will cause Arrow validation errors. Filtering out invalid rows...")
+                # Add filter to exclude rows with invalid MAP keys
+                final_query = f"""
+                SELECT * FROM ({final_query}) validated
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM unnest(map_keys(validated.rates)) AS k(key)
+                    WHERE k.key IS NULL OR k.key = ''
+                )
+                """
+                logger.info("✅ Applied filter to exclude invalid MAP entries")
+        except Exception as e:
+            logger.warning(f"MAP validation query failed (might be empty result): {e}")
 
         try:
             arrow_result = self.con.sql(final_query).arrow()
@@ -403,13 +431,47 @@ class IcebergLoader:
                 logger.error(f"Schema: {arrow_table.schema}")
                 raise
 
-            logger.info(f"Upserting {arrow_table.num_rows} rows using keys: {self.pk_list}...")
+            # CRITICAL FIX: PyIceberg's upsert() has a bug with MAP types that causes
+            # "Map array keys array should have no nulls" on subsequent runs
+            # https://github.com/apache/arrow/issues/38553 related issue on pyarrow + MAP bug
+
+            # We use delete+append strategy for idempotency instead of buggy merge upsert
+            logger.info(f"Processing {arrow_table.num_rows} rows using delete+append (idempotent, MAP-safe)...")
+
             try:
-                upsert_result = table.upsert(df=arrow_table, join_cols=self.pk_list)
-                logger.info("Upsert complete.")
-                logger.info("\nUpsert operation completed")
-                logger.info(f"Rows Updated: {upsert_result.rows_updated}")
-                logger.info(f"Rows Inserted: {upsert_result.rows_inserted}")
+                # Extract unique combinations of primary key values
+                pk_values_set = set()
+                for i in range(arrow_table.num_rows):
+                    pk_tuple = tuple(arrow_table.column(pk)[i].as_py() for pk in self.pk_list)
+                    pk_values_set.add(pk_tuple)
+
+                # Build delete predicate: (rate_date='2024-01-01' AND source='x' AND base_currency='USD') OR ...
+                delete_predicates = []
+                for pk_values in pk_values_set:
+                    row_predicates = []
+                    for pk, value in zip(self.pk_list, pk_values):
+                        if isinstance(value, str):
+                            row_predicates.append(f"{pk} = '{value}'")
+                        else:
+                            row_predicates.append(f"{pk} = {value}")
+                    delete_predicates.append(f"({' AND '.join(row_predicates)})")
+
+                # Delete existing rows with matching keys (idempotency)
+                if delete_predicates:
+                    combined_predicate = " OR ".join(delete_predicates)
+                    logger.info(f"Deleting {len(pk_values_set)} existing row(s) with matching keys...")
+                    logger.debug(f"Delete predicate: {combined_predicate[:300]}...")
+                    table.delete(combined_predicate)
+                    logger.info("✅ Deleted existing rows")
+
+                # Append new data (no merge, avoids MAP bug)
+                logger.info(f"Appending {arrow_table.num_rows} rows...")
+                table.append(arrow_table)
+                logger.info(f"✅ Successfully inserted {arrow_table.num_rows} rows")
+
+            except Exception as e:
+                logger.error(f"Delete+Append strategy failed: {e}")
+                raise
             except Exception as e:
                 if "Map array keys array should have no nulls" in str(e):
                     logger.error("═" * 80)
