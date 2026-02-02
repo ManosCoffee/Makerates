@@ -140,14 +140,17 @@ def frankfurter_range_source(start_date: str, end_date: str):
             
             # Iterate through each date in the response
             for date_str, rates_dict in all_rates.items():
+                extraction_ts = datetime.now()
+                # CRITICAL: Cast all rate values to float to prevent type-versioned columns
+                cleaned_rates = {k: float(v) for k, v in rates_dict.items()}
                 yield {
-                    "extraction_id": f"frankfurter_{date_str}",
-                    "extraction_timestamp": datetime.now().isoformat(),
+                    "extraction_id": f"fr_{date_str}_{base_currency}_{int(extraction_ts.timestamp())}",
+                    "extraction_timestamp": extraction_ts.isoformat(),
                     "source": "frankfurter",
                     "source_tier": "primary",
                     "base_currency": base_currency,
                     "rate_date": date_str,
-                    "rates": rates_dict,
+                    "rates": cleaned_rates,
                     "api_response_raw": data,  # Store complete response for schema consistency
                     "http_status_code": response.status_code,
                     "response_size_bytes": len(response.content) # Approx share

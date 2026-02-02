@@ -94,15 +94,19 @@ def currencylayer_source(date: Optional[str] = None):
             
             rates_dict = data.get("quotes", {})
             # Quotes are like "USDGBP": 0.72. We need to strip the base.
-            cleaned_rates = {k.replace(base_currency, ""): v for k, v in rates_dict.items()}
+            # CRITICAL: Cast all values to float to prevent type-versioned columns in DuckDB
+            cleaned_rates = {k.replace(base_currency, ""): float(v) for k, v in rates_dict.items()}
+
+            extraction_ts = datetime.now()
+            rate_date = data.get("date", datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') if timestamp else extraction_ts.strftime('%Y-%m-%d'))
 
             record = {
-                "extraction_id": f"currencylayer_{data.get('date', datetime.now().strftime('%Y-%m-%d'))}_{timestamp}",
-                "extraction_timestamp": datetime.now().isoformat(),
+                "extraction_id": f"cl_{rate_date}_{base_currency}_{int(extraction_ts.timestamp())}",
+                "extraction_timestamp": extraction_ts.isoformat(),
                 "source": "currencylayer",
                 "source_tier": "secondary", # Paid/Limited source
-                "base_currency": base_currency, 
-                "rate_date": data.get("date", datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') if timestamp else datetime.now().strftime('%Y-%m-%d')),
+                "base_currency": base_currency,
+                "rate_date": rate_date,
                 "rates": cleaned_rates,
                 "timestamp": timestamp,
                 "api_response_raw": data,
@@ -171,11 +175,13 @@ def currencylayer_range_source(start_date: str, end_date: str):
 
             # Flatten: Yield one record per day
             for date_key, rates_dict in quotes_by_date.items():
-                cleaned_rates = {k.replace(base_currency, ""): v for k, v in rates_dict.items()}
-                
+                # CRITICAL: Cast all values to float to prevent type-versioned columns
+                cleaned_rates = {k.replace(base_currency, ""): float(v) for k, v in rates_dict.items()}
+                extraction_ts = datetime.now()
+
                 yield {
-                    "extraction_id": f"currencylayer_{date_key}",
-                    "extraction_timestamp": datetime.now().isoformat(),
+                    "extraction_id": f"cl_{date_key}_{base_currency}_{int(extraction_ts.timestamp())}",
+                    "extraction_timestamp": extraction_ts.isoformat(),
                     "source": "currencylayer",
                     "source_tier": "secondary",
                     "base_currency": base_currency,

@@ -171,12 +171,14 @@ class IcebergLoader:
         logger.info(f"Scanning source pattern: {source_pattern}")
 
         # Step 1: Read with auto schema detection to get all flattened columns
+        # CRITICAL: union_by_name=true prevents type-versioned columns (__v_double suffix)
         query = f"""
         CREATE OR REPLACE TEMP TABLE bronze_flattened AS
         SELECT *
         FROM read_json_auto('{source_pattern}',
             format='newline_delimited',
             filename=true,
+            union_by_name=true,
             maximum_object_size=50000000
         );
         """
