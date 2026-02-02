@@ -43,22 +43,18 @@ models:
               arguments:
                 values: ['WARNING', 'CRITICAL']
 
-  # =========================================================================
-  # FACT TABLE: Layer 4 - Statistical Validation + Final Output
-  # =========================================================================
+  # FACT TABLE: Our Clean output (with Statistical Validation) 
 
   - name: fact_rates_validated
     description: |
       SINGLE SOURCE OF TRUTH for currency rates.
-
-      Swiss Cheese Validation Complete:
-      ✅ Layer 1 (dlt): Structural validation (schema, types)
-      ✅ Layer 2 (dbt): Logical validation (constraints, ranges)
-      ✅ Layer 3 (dbt): Consensus gate (cross-source validation)
-      ✅ Layer 4 (dbt): Statistical checks (flash crash detection)
-
+      Structural validation (schema, types) happens upstream during ingestion(dlt)
+      Here:
+        - Logical validation (constraints, ranges)
+        - Consensus gate (cross-source validation)
+        - Statistical checks (flash crash detection)
       Only includes rates that passed ALL validation layers.
-      Ready for DynamoDB Hot Tier sync.
+      Ready for Analytics Marts (cold storage ) & DynamoDB Hot Tier sync.
     config:
       contract:
         enforced: true
@@ -93,12 +89,12 @@ models:
         constraints:
           - type: not_null
           - type: check
-            expression: "base_currency = 'EUR'"
+            expression: "base_currency = 'USD'"
         tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['EUR']  # Primary source is EUR-based
+                values: ['USD']  # Primary source is EUR-based
 
       - name: target_currency
         description: Target currency
