@@ -215,9 +215,9 @@ class IcebergLoader:
                 currency_keys_list = [key for _, key in valid_pairs]
                 logger.info(f"Currency keys: {currency_keys_list}")
 
-                # Build CASE expressions to create structs only for non-NULL values with non-empty keys
+                # Build CASE expressions to create structs only for non-NULL values
                 struct_list = ", ".join([
-                    f"CASE WHEN {col} IS NOT NULL AND {col} IS NOT NaN THEN "
+                    f"CASE WHEN {col} IS NOT NULL THEN "
                     f"{{key: '{key}', value: CAST({col} AS DOUBLE)}} "
                     f"END"
                     for col, key in valid_pairs
