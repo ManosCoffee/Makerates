@@ -35,14 +35,14 @@ logs:
 
 # Open Kestra UI
 open-daily-topology:
-    open http://localhost:8080/ui/main/flows/edit/makerates/rates_daily/topology
+    @if [ "$(uname)" = "Darwin" ]; then open http://localhost:8080/ui/main/flows/edit/makerates/rates_daily/topology; else xdg-open http://localhost:8080/ui/main/flows/edit/makerates/rates_daily/topology || echo "Please open: http://localhost:8080/ui/main/flows/edit/makerates/rates_daily/topology"; fi
 
 open-backfill-topology:
-    open http://localhost:8080/ui/main/flows/edit/makerates/rates_backfill/topology
+    @if [ "$(uname)" = "Darwin" ]; then open http://localhost:8080/ui/main/flows/edit/makerates/rates_backfill/topology; else xdg-open http://localhost:8080/ui/main/flows/edit/makerates/rates_backfill/topology || echo "Please open: http://localhost:8080/ui/main/flows/edit/makerates/rates_backfill/topology"; fi
 
 # Open MinIO Console
 ui-minio:
-    open http://localhost:9001
+    @if [ "$(uname)" = "Darwin" ]; then open http://localhost:9001; else xdg-open http://localhost:9001 || echo "Please open: http://localhost:9001"; fi
 
 # DUCKDB
 
@@ -83,7 +83,7 @@ clean-s3:
     @echo "✅ MinIO S3 buckets cleaned. Everything will reinitialize on next run."
 
 stop-makerates:
-    docker ps -q --filter "name=^makerates" | xargs -r docker stop   
+    @CONTAINERS=$$(docker ps -q --filter "name=^makerates"); if [ -n "$$CONTAINERS" ]; then echo "$$CONTAINERS" | xargs docker stop; else echo "No makerates containers running"; fi   
 
 # Hard Reset: Stop containers, wipe volumes, delete DB, and restart
 reset:
