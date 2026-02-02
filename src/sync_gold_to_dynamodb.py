@@ -60,7 +60,7 @@ def sync_rates_to_dynamodb():
 
     logger.info(f"Starting DynamoDB Sync. Source: {duckdb_path}, Target: {table_name}")
 
-    # --- 2. Read from DuckDB ---
+    # ---  Read from DuckDB ---
     try:
         # Use str(duckdb_path) because DuckDB python API might expect string
         con = duckdb.connect(str(duckdb_path), read_only=True)
@@ -103,12 +103,10 @@ def sync_rates_to_dynamodb():
         logger.info("No data to sync.")
         return
 
-    # --- 3. Write to DynamoDB ---
+    # ---  Write to DynamoDB ---
     try:
         ddb_client = DynamoDBClient(
-            table_name=table_name,
-            endpoint_url=endpoint_url,
-            region_name=region
+            table_name=table_name
         )
     except Exception as e:
         logger.error(f"Failed to initialize DynamoDB client: {e}")
