@@ -24,14 +24,14 @@ models:
   makerates:
     # Staging Layer
     staging:
-      +materialized: view
+      +materialized: table
       +schema: staging
       +tags: ["staging"]
 
     # Silver layer: validated currency rates
     # DuckDB writes to local tables, then we export to Parquet with metadata
     validation:
-      +materialized: view
+      +materialized: table
       +schema: validation
       +tags: ["validation", "validated"]
       

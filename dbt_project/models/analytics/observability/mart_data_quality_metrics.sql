@@ -6,9 +6,8 @@
 }}
 
 /*
-Pipeline Health & Data Quality Metrics
-
-Purpose: SLA monitoring, detect stale data, track validation failures
+Pipeline Health & Quality Metrics:
+SLA monitoring, stale data detection, validation failure tracking
 Business Value: Operations team monitors pipeline health, gets alerts if data >2 days old
 
 Health Status:
