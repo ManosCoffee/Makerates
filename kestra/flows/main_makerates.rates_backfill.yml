@@ -331,8 +331,7 @@ tasks:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       networkMode: makerates-network
       volumes:
-        # - makerates-dbt-data:/data
-        - ./data:/data
+        - "{{ envs.host_pwd }}/data:/data"
     outputFiles:
       - /data/analytics.duckdb
     env:
@@ -354,22 +353,7 @@ tasks:
     commands:
       - dbt deps
       - dbt build
-
-  - id: upload_ddb_file
-    type: io.kestra.plugin.minio.Upload
-    namespaceFiles:
-      enabled: true
-    region: "{{ envs.dynamodb_aws_default_region }}"
-    endpoint: "{{ envs.minio_endpoint }}"  
-    accessKeyId: "{{ envs.destination__filesystem__credentials__aws_access_key_id }}"
-    secretKeyId: "{{ envs.destination__filesystem__credentials__aws_secret_access_key }}"
-    from: "{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}" #"{{ outputs.dbt_validation_and_transform.outputFiles['analytics.duckdb'] }}"
-    bucket: "analytics-bucket"
-    key: "analytics.duckdb"
-
-
-
-
+      
 errors:
   - id: backfill_error
     type: io.kestra.plugin.core.log.Log
