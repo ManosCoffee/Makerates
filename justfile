@@ -10,7 +10,7 @@ default:
 
 init:
     just run 
-    just init-analytics-bucket
+    just init-minio-buckets
 
 # Run
 run:
@@ -66,10 +66,12 @@ db-validation:
     docker run --rm -it -v makerates-dbt-data:/data --entrypoint duckdb makerates-ingestion-base:latest /data/analytics.duckdb "SELECT * FROM main_validation.consensus_check WHERE status = 'FLAGGED'"
 
 # Create analytics bucket in MinIO (if missing)
-init-analytics-bucket:
-    @echo "🪣 Creating analytics-bucket in MinIO..."
-    docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 mb s3://analytics-bucket || echo "Bucket might already exist."
-    @echo "✅ Bucket created."
+init-minio-buckets:
+    @echo "🪣 Creating necessary buckets in MinIO..."
+    @docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 mb s3://bronze-bucket || echo "Bronze bucket might already exist."
+    @docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 mb s3://silver-bucket || echo "Silver bucket might already exist."
+    @docker run --rm --network makerates-network -e AWS_ACCESS_KEY_ID=$MINIO_ROOT_USER -e AWS_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD amazon/aws-cli --endpoint-url http://minio:9000 s3 mb s3://analytics-bucket || echo "Analytics bucket might already exist."
+    @echo "✅ Buckets created."
 
 # Debug S3 Connectivity from DuckDB
 debug-s3-connectivity:
