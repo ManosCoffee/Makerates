@@ -197,6 +197,43 @@ class IcebergLoader:
         """
         rates_cols = [row[0] for row in self.con.sql(rates_cols_query).fetchall()]
 
+        # ═══════════════════════════════════════════════════════════════════════
+        # DATA QUALITY CHECK: Detect NULL rates BEFORE filtering them out
+        # Business needs visibility when APIs return incomplete/missing data
+        # ═══════════════════════════════════════════════════════════════════════
+        if rates_cols:
+            try:
+                # Check for NULLs in rate columns (sample first 20 for performance)
+                sample_cols = rates_cols[:20]
+                null_conditions = [f"SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS {col}_nulls" for col in sample_cols]
+                null_check_query = f"SELECT {', '.join(null_conditions)} FROM bronze_flattened"
+
+                null_result = self.con.sql(null_check_query).fetchone()
+
+                # Identify currencies with NULL values
+                null_currencies = []
+                for i, col in enumerate(sample_cols):
+                    null_count = null_result[i]
+                    if null_count > 0:
+                        currency = col.replace('rates__', '').upper()
+                        null_currencies.append(f"{currency}({null_count} rows)")
+
+                if null_currencies:
+                    logger.warning("═" * 80)
+                    logger.warning("⚠️  DATA QUALITY ALERT: NULL RATES DETECTED")
+                    logger.warning("═" * 80)
+                    logger.warning(f"Currencies with NULL values: {', '.join(null_currencies)}")
+                    logger.warning("These will be EXCLUDED from the MAP (filtered out).")
+                    logger.warning("BUSINESS IMPACT: Missing rates for these currencies!")
+                    logger.warning("Possible causes: API outage, currency delisting, rate limit exceeded")
+                    logger.warning("ACTION REQUIRED: Investigate API response for data completeness")
+                    logger.warning("═" * 80)
+                else:
+                    logger.info("✅ Data quality check passed: No NULL rates detected")
+
+            except Exception as e:
+                logger.warning(f"Data quality NULL check failed (non-critical): {e}")
+
         if rates_cols:
             # Build MAP using map_from_entries with FILTER to exclude NULLs
             # Create list of struct entries: {key: 'USD', value: rates__usd}
@@ -450,10 +487,10 @@ class IcebergLoader:
                 for pk_values in pk_values_set:
                     row_predicates = []
                     for pk, value in zip(self.pk_list, pk_values):
-                        if isinstance(value, str):
-                            row_predicates.append(f"{pk} = '{value}'")
-                        else:
-                            row_predicates.append(f"{pk} = {value}")
+                        # Convert all values to strings and quote them (handles dates, strings, etc.)
+                        # Dates come in as datetime.date objects and need to be converted to string
+                        value_str = str(value)
+                        row_predicates.append(f"{pk} = '{value_str}'")
                     delete_predicates.append(f"({' AND '.join(row_predicates)})")
 
                 # Delete existing rows with matching keys (idempotency)
