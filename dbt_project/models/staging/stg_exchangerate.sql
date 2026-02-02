@@ -34,8 +34,13 @@ WITH bronze_data AS (
     WHERE rate_date >= CAST('{{ env_var("EXECUTION_DATE", "1970-01-01") }}' AS DATE)
 
     {% if is_incremental() %}
-      -- Only process new dates (no lookback - append is simple!)
-      AND rate_date > (SELECT MAX(rate_date) FROM {{ this }})
+      {% if env_var("PIPELINE_MODE", "daily") == "daily" %}
+        -- Daily mode: Only process dates AFTER what we have
+        AND rate_date > (SELECT MAX(rate_date) FROM {{ this }})
+      {% else %}
+        -- Backfill mode: Process the execution date range regardless of existing data
+        -- (Allows out-of-order backfills without --full-refresh)
+      {% endif %}
     {% endif %}
 ),
 
