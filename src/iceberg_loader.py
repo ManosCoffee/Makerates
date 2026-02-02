@@ -231,33 +231,24 @@ class IcebergLoader:
             rates_map_expr = "MAP([], [])::MAP(VARCHAR, DOUBLE) AS rates"
             logger.warning("No rates__* columns found, creating empty rates MAP")
 
-        # Step 3: Determine which timestamp column exists
-        # Check column names in bronze_flattened
-        cols_query = "SELECT column_name FROM (DESCRIBE SELECT * FROM bronze_flattened)"
-        existing_cols = [row[0] for row in self.con.sql(cols_query).fetchall()]
 
-        # Use rate_timestamp if it exists, otherwise fall back to timestamp
-        if 'rate_timestamp' in existing_cols:
-            timestamp_expr = "rate_timestamp AS timestamp"
-        elif 'timestamp' in existing_cols:
-            timestamp_expr = "timestamp"
-        else:
-            timestamp_expr = "NULL::BIGINT AS timestamp"
+        # Create bronze_raw table with reconstructed MAP
+        columns = [
+            "extraction_id",
+            "extraction_timestamp",
+            "source",
+            "source_tier",
+            "base_currency",
+            "rate_date",
+            rates_map_expr,
+            "http_status_code",
+            "filename"
+        ]
 
-        # Step 4: Create final bronze_raw table with reconstructed MAP
         reconstruct_query = f"""
         CREATE OR REPLACE TEMP TABLE bronze_raw AS
         SELECT
-            extraction_id,
-            extraction_timestamp,
-            source,
-            source_tier,
-            base_currency,
-            rate_date,
-            {rates_map_expr},
-            {timestamp_expr},
-            http_status_code,
-            filename
+            {', '.join(columns)}
         FROM bronze_flattened;
         """
         self.con.sql(reconstruct_query)
@@ -267,12 +258,12 @@ class IcebergLoader:
         # Read PKs from Env Config (List)
         pk_cols_sql = ", ".join(self.pk_list)
         
-        # For daily mode: Accept latest data (7-day lookback for weekends/holidays)
+        # For daily mode: Accept latest data (3-day lookback for weekends/holidays)
         # For backfill mode: Use strict date range
         if self.mode == "daily":
-            # Daily: Accept data from past 7 days (handles weekends/holidays when APIs return latest available)
+            # Daily: Accept data from past 3 days (handles weekends/holidays when APIs return latest available)
             filter_clause = f"""
-                WHERE CAST(rate_date AS DATE) >= CAST('{self.start_date}' AS DATE) - INTERVAL '7 days'
+                WHERE CAST(rate_date AS DATE) >= CAST('{self.start_date}' AS DATE) - INTERVAL '3 days'
             """
         else:
             # Backfill: strict date range
@@ -307,7 +298,7 @@ class IcebergLoader:
 
             logger.info(f"Read {arrow_table.num_rows} rows (after dedup) for period {self.start_date} to {self.end_date}")
 
-            # Diagnostic: Check rates column for NULL keys
+            # Diagnostic: Check rates column and timestamp for NULL issues
             if 'rates' in arrow_table.schema.names and arrow_table.num_rows > 0:
                 logger.info("Validating rates MAP column...")
                 rates_col = arrow_table.column('rates')
@@ -317,6 +308,14 @@ class IcebergLoader:
                     map_value = rates_col[i]
                     if map_value.is_valid:
                         logger.debug(f"Row {i} rates: {map_value.as_py()}")
+
+            # Check for NULL timestamp column (suspected root cause!)
+            if 'timestamp' in arrow_table.schema.names:
+                timestamp_col = arrow_table.column('timestamp')
+                null_count = timestamp_col.null_count
+                logger.info(f"Timestamp column: {null_count} NULLs out of {len(timestamp_col)} rows")
+                if null_count > 0:
+                    logger.warning(f"⚠️ Found {null_count} NULL values in timestamp column - this may cause Arrow validation errors!")
 
             return arrow_table
 
@@ -404,29 +403,24 @@ class IcebergLoader:
                 logger.error(f"Schema: {arrow_table.schema}")
                 raise
 
+            logger.info(f"Upserting {arrow_table.num_rows} rows using keys: {self.pk_list}...")
             try:
                 upsert_result = table.upsert(df=arrow_table, join_cols=self.pk_list)
+                logger.info("Upsert complete.")
+                logger.info("\nUpsert operation completed")
+                logger.info(f"Rows Updated: {upsert_result.rows_updated}")
+                logger.info(f"Rows Inserted: {upsert_result.rows_inserted}")
             except Exception as e:
                 if "Map array keys array should have no nulls" in str(e):
                     logger.error("═" * 80)
                     logger.error("ARROW VALIDATION ERROR: NULL keys detected in MAP column")
                     logger.error("═" * 80)
                     logger.error("This might be caused by:")
-                    logger.error("1. Existing data in Iceberg table with NULL MAP keys from previous run")
+                    logger.error("1. NULL timestamp column (check logs above)")
                     logger.error("2. Schema mismatch between existing and new data")
-                    logger.error("3. DuckDB map_from_entries creating NULL keys")
-                    logger.error("")
-                    logger.error("REMEDIATION OPTIONS:")
-                    logger.error("A. Drop and recreate the Iceberg table:")
-                    logger.error(f"   - Delete s3://silver-bucket/iceberg/{table_name}/")
-                    logger.error(f"   - Delete DynamoDB metadata for {table_name}")
-                    logger.error("B. Check if there are orphaned metadata files")
+                    logger.error("3. PyIceberg upsert merge issue with MAP types")
                     logger.error("═" * 80)
                 raise
-            logger.info("Upsert complete.")
-            logger.info("\nUpsert operation completed")
-            logger.info(f"Rows Updated: {upsert_result.rows_updated}")
-            logger.info(f"Rows Inserted: {upsert_result.rows_inserted}")
             
             # --- DYNAMODB STATE UPDATE ---
             try:
