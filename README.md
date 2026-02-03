@@ -10,9 +10,16 @@ A POC case study for Make.com
 ## 🚀 Quick Start (2 Minutes)
 
 ### Prerequisites
-- Docker & Docker Compose
-- Python 3.12+ with `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
-- 8GB RAM recommended
+- **OS**: Linux or macOS (cross-platform compatible)
+- **Docker & Docker Compose**
+- **Python 3.12+** with `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- **just** command runner (`cargo install just` or see [installation guide](https://github.com/casey/just#installation))
+- **8GB RAM** recommended
+
+
+
+
+
 
 ### Setup & Run
 ```bash
@@ -31,6 +38,15 @@ just ui-kestra
 1. In Kestra UI, go to **Executions** → **Create Execution**.
 2. Select **`makerates.rates_daily`**.
 3. Click **Execute**.
+
+
+![gifff](images/gifs/walkthrough_daily_flow.gif)
+
+
+
+
+
+
 
 ### Inspect Results
 ```bash
