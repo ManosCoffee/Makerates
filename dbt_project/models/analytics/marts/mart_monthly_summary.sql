@@ -5,18 +5,6 @@
   )
 }}
 
-/*
-Monthly Currency Rate Summary
-
-Purpose: Pre-aggregated monthly rates for financial reporting and board presentations
-Business Value: Finance team gets monthly summaries for YoY comparisons, trend analysis
-
-Aggregations included:
-- Min/Max/Avg/Median rates per month
-- Opening/Closing rates (first/last day of month)
-- Volatility percentage (range/average)
-- Standard deviation
-*/
 
 WITH monthly_data AS (
     SELECT

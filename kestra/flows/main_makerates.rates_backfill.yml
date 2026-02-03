@@ -321,7 +321,7 @@ tasks:
   # ===== 4. TRANSFORM (dbt) via Namespace Files =====
   - id: dbt_validation_and_transform
     type: io.kestra.plugin.dbt.cli.DbtCLI
-    allowWarnings: true
+    allowWarning: true
     containerImage: makerates-ingestion-base:latest
     dependsOn:
       - fetch_iceberg_metadata_paths
