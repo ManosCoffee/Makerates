@@ -25,13 +25,18 @@ A POC case study for Make.com
 ## 🚀 Quick Start (2 Minutes)
 
 ### Prerequisites
-- **OS**: Linux or macOS (cross-platform compatible)
-- **Docker & Docker Compose**
-- **Python 3.12+** with `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- **OS**: macOS or Linux (cross-platform compatible)
+- **Docker / Docker Desktop**
 - **just** command runner (`cargo install just` or see [installation guide](https://github.com/casey/just#installation))
-- **8GB RAM** recommended
+- **8GB RAM** 
 
 
+
+
+### Preliminaries
+- **API Keys**: Acquire API keys for free-tier accounts from **BOTH** commercial providers (ExchangeRate-API, CurrencyLayer - Frankfurter is free) 
+
+  Follow these simple instructions : 📃[**API Keys Guide**](get-api-keys.md)
 
 
 
@@ -55,13 +60,13 @@ just ui-kestra
 3. Click **Execute**.
 
 
-![gifff](images/gifs/walkthrough_daily_flow.gif)
+![daily_flow](images/gifs/walkthrough_daily_flow.gif)
 
 
-![gifff](images/gifs/walkthrough_backfill_flow.gif)
+![backfill_flow](images/gifs/walkthrough_backfill_flow.gif)
 
 
-
+![show_analytics_data_sample](images/gifs/menu_show_analytics.gif)
 
 ### Inspect Results
 ```bash
