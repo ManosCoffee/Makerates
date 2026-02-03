@@ -175,7 +175,14 @@ rates_with_priority AS (
         ON adc.rate_date = cl.rate_date
         AND adc.target_currency = cl.target_currency
         AND adc.base_currency = cl.base_currency
-    WHERE COALESCE(f.exchange_rate, er.exchange_rate, cl.exchange_rate) IS NOT NULL
+    WHERE
+        {% if env_var("PIPELINE_MODE", "daily") == "backfill" %}
+            -- Backfill: Only check Frankfurter and CurrencyLayer (ExchangeRate has no historical data)
+            COALESCE(f.exchange_rate, cl.exchange_rate) IS NOT NULL
+        {% else %}
+            -- Daily: Check all three sources
+            COALESCE(f.exchange_rate, er.exchange_rate, cl.exchange_rate) IS NOT NULL
+        {% endif %}
 ),
 
 -- Get consensus check results (only flagged rates)
@@ -227,6 +234,7 @@ LEFT JOIN anomalies a
 
 -- CRITICAL: Only include validated rates (no anomalies)
 WHERE validation_status = 'VALIDATED'
+  AND r.extraction_id IS NOT NULL  -- Defensive: ensure extraction_id is never NULL
 
 {% if is_incremental() %}
   -- Only process new/updated dates (with 3-day lookback for late-arriving data)
