@@ -127,6 +127,11 @@ WHERE s.consensus_rate IS NOT NULL
   )
 
 {% if is_incremental() %}
-  -- Only process new/updated dates (with 3-day lookback for late-arriving data)
-  AND s.rate_date >= (SELECT MAX(rate_date) FROM {{ this }}) - INTERVAL '3 days'
+  {% if env_var("PIPELINE_MODE", "daily") == "daily" %}
+    -- Daily mode: Only process new/updated dates (with 3-day lookback for late-arriving data)
+    AND s.rate_date >= (SELECT MAX(rate_date) FROM {{ this }}) - INTERVAL '3 days'
+  {% else %}
+    -- Backfill mode: Process all dates from execution date onwards (allows historical backfills)
+    AND s.rate_date >= CAST('{{ env_var("EXECUTION_DATE", "1970-01-01") }}' AS DATE)
+  {% endif %}
 {% endif %}
