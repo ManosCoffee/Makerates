@@ -27,9 +27,11 @@ A POC case study for Make.com
 ### Prerequisites
 - **OS**: macOS or Linux (cross-platform compatible)
 - **Docker / Docker Desktop**
-- **just** command runner (`cargo install just` or see [installation guide](https://github.com/casey/just#installation))
+- **just** the *Rust* based command runner that overthrows complex Makefiles 
+([Just start using it!](https://berkkaraal.com/blog/2024/12/06/just-start-using-it/)📖)
 - **8GB RAM** 
-
+### Technologies Included Out-Of-The-Box
+***You don't have to worry about them :  the infrastructure is already packaged for you***
 
 
 
@@ -37,16 +39,21 @@ A POC case study for Make.com
 - **API Keys**: Acquire API keys for free-tier accounts from **BOTH** commercial providers (ExchangeRate-API, CurrencyLayer - Frankfurter is free) 
 
   Follow these simple instructions : 📃[**API Keys Guide**](get-api-keys.md)
+- **Ensure JUST is installed**: ```$ brew install just```🍎  or ```$ sudo apt install just```🐧
 
+  ```bash
+  just --version
+  ```
 
+That's it!
 
 
 ### Setup & Run
 ```bash
-# 1. Install dependencies (editable mode + dev tools)
-uv pip install -e ".[dev]"
+# 1. Spin-up local infrastructure and initialize  services
+just init
 
-# 2. Start infrastructure (Docker + DynamoDB Init)
+# 2. 
 just run
 
 # 3. Open Kestra UI
