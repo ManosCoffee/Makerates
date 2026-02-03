@@ -64,17 +64,7 @@ services:
       - makerates-network
     restart: unless-stopped
 
-  # Project Nessie (Iceberg Catalog)
-  nessie:
-    image: projectnessie/nessie:latest
-    container_name: makerates-nessie
-    ports:
-      - "19120:19120"
-    networks:
-      - makerates-network
-    restart: unless-stopped
-
-  # ================ ORCHESTRATION LAYER - Kestra Workflows ==========================
+  # ----------- ORCHESTRATION LAYER - Kestra Workflows ------------------
 
   # Kestra Backend Database
   kestra-db:
@@ -109,8 +99,8 @@ services:
       - ./kestra/flows:/app/flows
       - ./dbt_project:/app/dbt_project
       - ./data:/data
-      # - ./data/duckdb:/duckdb
-      # - makerates-dbt-data:/data # Mount shared DBT volume to ensure it is created
+      
+      
     environment:
       KESTRA_CONFIGURATION: |
         datasources:
@@ -131,8 +121,8 @@ services:
           server:
             basic-auth:
               enabled: true
-              username: admin@kestra.io
-              password: Kestra123
+              username: ${KESTRA_USR}
+              password: ${KESTRA_PSWD}
           repository:
             type: postgres
           storage:
@@ -203,8 +193,8 @@ services:
     environment:
       DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-    volumes:
-      - makerates-dbt-data:. # Mount shared DBT volume
+    # volumes:
+    #   - makerates-dbt-data:. 
   dynamodb-ui-admin:
     image: aaronshaf/dynamodb-admin
     container_name: makerates-dynamodb-admin
@@ -217,19 +207,6 @@ services:
     networks:
       - makerates-network
     restart: unless-stopped
-  # duckdb-ui:
-  #   image: ghcr.io/ibero-data/duck-ui:latest
-  #   container_name: duckdb-ui
-  #   depends_on:
-  #     - minio
-  #   ports:
-  #     - "5522:5522"
-  #   volumes:
-  #     - makerates-duckdb-data:/app/databases:ro # DuckUI expects files here
-  #   networks:
-  #     - makerates-network
-  #   profiles:
-  #     - tools # Only starts with: just duckdb-ui
 
 volumes:
   minio-data:
@@ -240,10 +217,8 @@ volumes:
     name: makerates-kestra-data
   kestra-db-data:
     name: makerates-kestra-db-data
-  makerates-dbt-data:
-    name: makerates-dbt-data
-  makerates-duckdb-data:
-    name: makerates-duckdb-data
+  # makerates-dbt-data:
+  #   name: makerates-dbt-data
 
 networks:
   makerates-network:

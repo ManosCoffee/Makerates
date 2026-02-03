@@ -7,6 +7,21 @@
 ---
 A POC case study for Make.com
 
+<div align="center">
+  
+  ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+  ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+  ![Kestra](https://img.shields.io/badge/Kestra-7F00FF?style=for-the-badge&logoColor=white)
+  ![dbt](https://img.shields.io/badge/dbt-FF694B?style=for-the-badge&logo=dbt&logoColor=white)
+  ![DuckDB](https://img.shields.io/badge/DuckDB-FFF000?style=for-the-badge&logo=duckdb&logoColor=black)
+  ![MinIO](https://img.shields.io/badge/MinIO-C72E49?style=for-the-badge&logo=minio&logoColor=white)
+  ![Amazon DynamoDB](https://img.shields.io/badge/Amazon%20DynamoDB-4053D6?style=for-the-badge&logo=amazondynamodb&logoColor=white)
+  ![Apache Iceberg](https://img.shields.io/badge/Apache%20Iceberg-29B6F6?style=for-the-badge&logo=apacheiceberg&logoColor=white)
+  ![Just](https://img.shields.io/badge/Just-121011?style=for-the-badge&logo=just&logoColor=white)
+  ![uv](https://img.shields.io/badge/uv-DE5FE7?style=for-the-badge&logo=python&logoColor=white)
+
+</div>
+
 ## 🚀 Quick Start (2 Minutes)
 
 ### Prerequisites
