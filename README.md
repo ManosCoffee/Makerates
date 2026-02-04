@@ -158,3 +158,18 @@ CURRENCYLAYER_API_KEY=your_key_here
 AWS_ACCESS_KEY_ID=minioadmin
 AWS_SECRET_ACCESS_KEY=minioadmin123
 ```
+
+> [!NOTE]  
+> Highlights information that users should take into account, even when skimming.
+
+> [!TIP]
+> This pattern permits us to maintain a raw immutable store of “facts”, towards a full audit trail.
+
+> [!IMPORTANT]  
+> External API’s are not forgiving : we shall not pay the price of our outages.We shift “Loading” to the left, with an ELT approach 
+
+> [!WARNING]  
+> Critical content demanding immediate user attention due to potential risks.
+
+> [!CAUTION]
+> Negative potential consequences of an action.
