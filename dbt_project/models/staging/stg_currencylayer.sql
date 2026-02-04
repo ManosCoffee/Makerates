@@ -88,7 +88,7 @@ SELECT
     CAST(rate_date AS DATE) AS rate_date,
     CONCAT(base_currency, '/', UPPER(REPLACE(target_currency, 'rates__', ''))) AS currency_pair,
     1.0 / exchange_rate AS inverse_rate,  -- For reverse calculations
-    CURRENT_TIMESTAMP AS dbt_loaded_at
+    CAST(CURRENT_TIMESTAMP AS TIMESTAMPTZ) AS dbt_loaded_at
 FROM deduplicated
 WHERE exchange_rate > 0
 

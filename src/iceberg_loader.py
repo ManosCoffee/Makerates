@@ -2,7 +2,7 @@ import os
 import sys
 import argparse
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import pyarrow as pa
 from duckdb import DuckDBPyConnection, connect
@@ -10,6 +10,7 @@ from pyiceberg.catalog import load_catalog
 from utils.s3_helper import get_s3_client, check_s3_prefix_exists
 from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
+from utils.timezone_helper import get_utc_now
 
 # Configure Logging (Already done in root_logger)
 from utils.dynamodb import DynamoDBClient
@@ -124,7 +125,7 @@ class IcebergLoader:
         base_path_resolved = base_path_resolved.replace("//rates", "/rates")
 
         target_dt = datetime.strptime(self.start_date, "%Y-%m-%d")
-        today_dt = datetime.now()
+        today_dt = get_utc_now()
         
         candidates = []
 
@@ -535,7 +536,7 @@ class IcebergLoader:
                 ddb.put_item({
                     "table_name": table_name,
                     "metadata_location": latest_metadata_location,
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": get_utc_now().isoformat()
                 })
                 logger.info(f"✅ Updated DynamoDB state for {table_name} in table {metadata_table}")
 

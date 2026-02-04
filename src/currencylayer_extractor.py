@@ -17,11 +17,12 @@ import requests
 import os
 import argparse
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from utils.quota_manager import QuotaManager
 from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
+from utils.timezone_helper import get_utc_now
 
 # Base URL
 CURRENCYLAYER_BASE_URL = "http://api.currencylayer.com" 
@@ -97,7 +98,7 @@ def currencylayer_source(date: Optional[str] = None):
             # CRITICAL: Cast all values to float to prevent type-versioned columns in DuckDB
             cleaned_rates = {k.replace(base_currency, ""): float(v) for k, v in rates_dict.items()}
 
-            extraction_ts = datetime.now()
+            extraction_ts = get_utc_now()
             rate_date = data.get("date", datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') if timestamp else extraction_ts.strftime('%Y-%m-%d'))
 
             record = {
@@ -177,7 +178,7 @@ def currencylayer_range_source(start_date: str, end_date: str):
             for date_key, rates_dict in quotes_by_date.items():
                 # CRITICAL: Cast all values to float to prevent type-versioned columns
                 cleaned_rates = {k.replace(base_currency, ""): float(v) for k, v in rates_dict.items()}
-                extraction_ts = datetime.now()
+                extraction_ts = get_utc_now()
 
                 yield {
                     "extraction_id": f"cl_{date_key}_{base_currency}_{int(extraction_ts.timestamp())}",

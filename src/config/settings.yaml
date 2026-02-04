@@ -51,3 +51,8 @@ dynamodb_tables:
   iceberg_metadata: "iceberg_metadata"
   currency_rates: "currency_rates"
   api_quota_tracker: "api_quota_tracker"
+
+# Timezone configuration
+timezone:
+  default: "UTC"
+  description: "All timestamps use UTC timezone for consistency"

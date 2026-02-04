@@ -11,11 +11,12 @@ dlt provides:
 import dlt
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from utils.quota_manager import QuotaManager
 from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
+from utils.timezone_helper import get_utc_now
 
 
 @dlt.source(name="frankfurter")
@@ -68,8 +69,8 @@ def frankfurter_source():
 
             # Build record with comprehensive metadata
             record = {
-                "extraction_id": f"frankfurter_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                "extraction_timestamp": datetime.now().isoformat(),
+                "extraction_id": f"frankfurter_{get_utc_now().strftime('%Y%m%d_%H%M%S')}",
+                "extraction_timestamp": get_utc_now().isoformat(),
                 "source": "frankfurter",
                 "source_tier": "primary",  # Frankfurter is ECB-based (institutional)
                 "base_currency": data.get("base", "EUR"),
@@ -140,7 +141,7 @@ def frankfurter_range_source(start_date: str, end_date: str):
             
             # Iterate through each date in the response
             for date_str, rates_dict in all_rates.items():
-                extraction_ts = datetime.now()
+                extraction_ts = get_utc_now()
                 # CRITICAL: Cast all rate values to float to prevent type-versioned columns
                 cleaned_rates = {k: float(v) for k, v in rates_dict.items()}
                 yield {

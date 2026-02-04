@@ -224,7 +224,7 @@ SELECT
     COALESCE(a.variance_pct, 0.0) AS consensus_variance,
 
     -- Metadata
-    CURRENT_TIMESTAMP AS dbt_loaded_at,
+    CAST(CURRENT_TIMESTAMP AS TIMESTAMPTZ) AS dbt_loaded_at,
     'fact_rates_validated' AS model_name
 
 FROM rates_with_priority r

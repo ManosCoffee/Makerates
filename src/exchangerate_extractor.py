@@ -14,11 +14,12 @@ dlt provides automatically:
 import dlt
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from utils.quota_manager import QuotaManager
 from utils.helpers import load_config
 from utils.logging_config import root_logger as logger
+from utils.timezone_helper import get_utc_now
 
 
 @dlt.source(name="exchangerate")
@@ -86,12 +87,12 @@ def exchangerate_source(api_key: str = None, use_v6: bool = False):
 
             # Build record with comprehensive metadata
             record = {
-                "extraction_id": f"exchangerate_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                "extraction_timestamp": datetime.now().isoformat(),
+                "extraction_id": f"exchangerate_{get_utc_now().strftime('%Y%m%d_%H%M%S')}",
+                "extraction_timestamp": get_utc_now().isoformat(),
                 "source": "exchangerate",
                 "source_tier": "secondary",  # ExchangeRate-API is secondary source for consensus
                 "base_currency": data.get("base", "USD"),
-                "rate_date": data.get("date", datetime.now().strftime('%Y-%m-%d')),
+                "rate_date": data.get("date", get_utc_now().strftime('%Y-%m-%d')),
                 "rate_timestamp": data.get("time_last_updated"),  # Unix timestamp if available
                 "rates": data.get("rates", {}),  # All currency pairs
                 "api_response_raw": data,  # Complete response for audit
