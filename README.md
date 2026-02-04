@@ -63,10 +63,14 @@ That's it!
 
 ### Setup & Run
 ```bash
-# 1. Spin-up local infrastructure and initialize  services
+# 1. Spin-up local infrastructure and initialize  services (Wait...)
 just init
 
-# 2. 
+# 2. Select-Menu appears : choose [1-7] or Esc and run pipeline manually
+just 
+
+
+
 just run
 
 # 3. Open Kestra UI
@@ -115,15 +119,24 @@ just db-analytics
 ## 🛠 Useful Commands (Justfile)
 
 | Command | Description |
-|---------|-------------|
-| `just run` | Start infrastructure |
-| `just ui-kestra` | Open Kestra UI (localhost:8080) |
-| `just ui-minio` | Open MinIO Console (localhost:9001) |
-| `just db-analytics` | Open DuckDB CLI (Gold Layer) |
-| `just db-validation` | Check flagged/rejected rates |
-| `just logs` | View Kestra container logs |
-| `just reload` | Rebuild worker & restart Kestra (Full Reload) |
-| `just clean-start` | **Reset**: Delete volumes & rebuild |
+| :--- | :--- |
+| **Core Connection** | |
+| `just init` | **Start Here**: Initialize full stack & open interactive menu |
+| `just run` | Spin up infrastructure (Docker + DynamoDB init) |
+| `just stop-makerates` | Stop all running containers |
+| `just reset` | **Hard Reset**: Wipe data, volumes & restart fresh |
+| **Interfaces** | |
+| `just menu` | Open the CLI interactive menu |
+| `just open-daily-topology` | Open *Daily Rates* flow in Kestra UI |
+| `just open-backfill-topology` | Open *Backfill* flow in Kestra UI |
+| `just open-minio` | Open MinIO Console (S3 Browser) |
+| `just open-dynamo` | Open DynamoDB Admin UI |
+| **Data Inspection** | |
+| `just duck-it` | Run SQL queries on Gold/Silver data (DuckDB) |
+| **Maintenance** | |
+| `just logs` | Tail Kestra server logs |
+| `just restart-kestra` | Fast restart of Kestra service only |
+| `just clean-iceberg` | Fix/Wipe Iceberg catalog state |
 
 ---
 
