@@ -22,7 +22,7 @@ A POC case study for Make.com
 
 </div>
 
-## 🚀 Quick Start (2 Minutes)
+
 
 ### Prerequisites
 - **OS**: macOS or Linux (cross-platform compatible)
@@ -30,15 +30,28 @@ A POC case study for Make.com
 - **just** the *Rust* based command runner that overthrows complex Makefiles 
 ([Just start using it!](https://berkkaraal.com/blog/2024/12/06/just-start-using-it/)📖)
 - **8GB RAM** 
+
 ### Technologies Included Out-Of-The-Box
 ***You don't have to worry about them :  the infrastructure is already packaged for you***
 
+| Component | Technology | Description | Version |
+| :--- | :--- | :--- | :--- |
+| **Orchestration** | [Kestra](https://kestra.io) | Declarative Workflow orchestration & scheduling | `latest` |
+| **Object Storage** | [MinIO](https://min.io) | S3-compatible object storage | `latest` |
+| **Compute & Analytics storage** | [DuckDB](https://duckdb.org) | Analytical OLAP database with single-node processing | `>=1.0.0` |
+| **Transformation** | [dbt](https://www.getdbt.com) | SQL-based transformations for Consensus Checks and Analytics tables | `1.8` (dbt-duckdb 1.10.0) |
+| **Iceberg processing** | [PyIceberg](https://py.iceberg.apache.org/) | Python processing library for Apache Iceberg (Open table format) | `>=0.6.0` |
+| **Cache & state management** | [DynamoDB Local](https://aws.amazon.com/dynamodb/) | AWS NoSQL database with lightning fast access | `latest` |
+| **Catalog** | [PostgreSQL](https://www.postgresql.org) | Metadata catalog for Kestra & Iceberg | `15-alpine` |
+| **Language** | [Python](https://www.python.org) | Core extraction & loading logic  | `>=3.12` |
 
+
+## 🚀 Quick Start (2 Minutes)
 
 ### Preliminaries
 - **API Keys**: Acquire API keys for free-tier accounts from **BOTH** commercial providers (ExchangeRate-API, CurrencyLayer - Frankfurter is free) 
 
-  Follow these simple instructions : 📃[**API Keys Guide**](get-api-keys.md)
+  Follow the instructions : 📃[**API Keys Guide**](get-api-keys.md)
 - **Ensure JUST is installed**: ```$ brew install just```🍎  or ```$ sudo apt install just```🐧
 
   ```bash
