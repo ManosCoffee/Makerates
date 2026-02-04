@@ -215,5 +215,5 @@ D. **Sync**: Upsert validated rates to **DynamoDB** (Hot Tier) - Ready to plug d
 ---
 
 ## 📁 Data Schemas Preview
-👉🏽 [Data Flows and Schemas in a nutshell](Data_FLOW_AND_SCHEMAS.md)
+👉🏽 [Data Flows and Schemas in a nutshell](DATA_FLOW_AND_SCHEMAS.md)
 
