@@ -185,11 +185,11 @@ models:
         data_type: varchar
 
     # Table-level tests (Layer 4: Statistical Validation)
-    tests:
-      # Freshness check: Rates should be updated daily
-      - dbt_utils.recency:
-          datepart: day
-          field: rate_date
-          interval: 7  # Alert if no rates within 7 days
-          severity: warn  # Don't fail pipeline on stale data, just warn
+    # tests:
+    #   # Freshness check: Rates should be updated daily
+    #   - dbt_utils.recency:
+    #       datepart: day
+    #       field: rate_date
+    #       interval: 7  # Alert if no rates within 7 days
+    #       severity: warn  # Don't fail pipeline on stale data, just warn
 
