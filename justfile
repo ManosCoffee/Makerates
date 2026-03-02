@@ -6,7 +6,7 @@ set quiet := true
 # VARS (Local control)
 LOCALHOST:= "http://localhost"
 DYNAMO_INTERNAL_PORT:= "8000"
-DYNAMO_SERVING_PORT:= "8001"
+DYNAMO_SERVING_PORT:= "8004"
 MINIO_SERVING_PORT:= "9001"
 KESTRA_UI_PORT:= "8080"
 
